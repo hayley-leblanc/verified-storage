@@ -114,7 +114,7 @@ verus! {
         pub exec fn setup<PMRegions>(pm_regions: &mut PMRegions, multilog_id: u128)
                                      -> (result: Result<Vec<u64>, MultiLogErr>)
             where
-                PMRegions: PersistentMemoryRegions
+                PMRegions: PersistentMemoryRegions,
             requires
                 old(pm_regions).inv()
             ensures

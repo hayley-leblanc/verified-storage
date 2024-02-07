@@ -337,13 +337,13 @@ verus! {
     }
 
     pub trait PersistentMemoryRegion : Sized {
-        spec fn view(self) -> PersistentMemoryRegionView;
+        spec fn view(&self) -> PersistentMemoryRegionView;
 
-        spec fn inv(self) -> bool;
+        spec fn inv(&self) -> bool;
 
-        spec fn constants(self) -> PersistentMemoryConstants;
+        spec fn constants(&self) -> PersistentMemoryConstants;
 
-        spec fn len(self) -> int;
+        spec fn len(&self) -> nat;
 
         /// This is the model of some routine that reads the
         /// `num_bytes` bytes at address `addr`.
@@ -382,6 +382,9 @@ verus! {
 
     pub trait PersistentMemoryRegions : Sized
     {
+        // TODO: maybe make PersistentMemoryRegions generic over PMRegion?
+        type PMRegion: PersistentMemoryRegion;
+
         spec fn view(&self) -> PersistentMemoryRegionsView;
 
         spec fn inv(&self) -> bool;

@@ -7,8 +7,8 @@
 //! use actually persistent memory to implement persistent memory!
 
 use crate::pmem::pmemspec_t::{
-    PersistentMemoryByte, PersistentMemoryConstants, PersistentMemoryRegionView,
-    PersistentMemoryRegions, PersistentMemoryRegionsView,
+    PersistentMemoryByte, PersistentMemoryConstants, PersistentMemoryRegion,
+    PersistentMemoryRegionView, PersistentMemoryRegions, PersistentMemoryRegionsView,
 };
 use builtin::*;
 use builtin_macros::*;
@@ -53,22 +53,6 @@ verus! {
             Ok(Self { contents, persistent_memory_view })
         }
 
-        pub closed spec fn view(self) -> PersistentMemoryRegionView
-        {
-            self.persistent_memory_view@
-        }
-
-        pub closed spec fn inv(self) -> bool
-        {
-            // We maintain the invariant that our size fits in a `u64`.
-            &&& self.contents.len() <= u64::MAX
-
-            // We also maintain the invariant that the contents of our
-            // volatile buffer matches the result of flushing the
-            // abstract state.
-            &&& self.contents@ == self.persistent_memory_view@.flush().committed()
-        }
-
         pub fn get_region_size(&self) -> (result: u64)
             requires
                 self.inv()
@@ -76,34 +60,6 @@ verus! {
                 result == self@.len()
         {
             self.contents.len() as u64
-        }
-
-        #[verifier::external_body]
-        pub fn read(&self, addr: u64, num_bytes: u64) -> (bytes: Vec<u8>)
-            requires
-                self.inv(),
-                addr + num_bytes <= self@.len()
-            ensures
-                bytes@ == self@.committed().subrange(addr as int, addr + num_bytes)
-        {
-            let addr_usize: usize = addr.try_into().unwrap();
-            let num_bytes_usize: usize = num_bytes.try_into().unwrap();
-            self.contents[addr_usize..addr_usize+num_bytes_usize].to_vec()
-        }
-
-        #[verifier::external_body]
-        pub fn write(&mut self, addr: u64, bytes: &[u8])
-            requires
-                old(self).inv(),
-                addr + bytes@.len() <= old(self)@.len(),
-                addr + bytes@.len() <= u64::MAX
-            ensures
-                self.inv(),
-                self@ == self@.write(addr as int, bytes@)
-        {
-            let addr_usize: usize = addr.try_into().unwrap();
-            self.contents.splice(addr_usize..addr_usize+bytes.len(), bytes.iter().cloned());
-            self.persistent_memory_view = Ghost(self.persistent_memory_view@.write(addr as int, bytes@))
         }
 
         pub fn flush(&mut self)
@@ -122,6 +78,50 @@ verus! {
         }
     }
 
+    impl PersistentMemoryRegion for VolatileMemoryMockingPersistentMemoryRegion {
+        closed spec fn view(&self) -> PersistentMemoryRegionView
+        {
+            self.persistent_memory_view@
+        }
+
+        closed spec fn inv(&self) -> bool
+        {
+            // We maintain the invariant that our size fits in a `u64`.
+            &&& self.contents.len() <= u64::MAX
+
+            // We also maintain the invariant that the contents of our
+            // volatile buffer matches the result of flushing the
+            // abstract state.
+            &&& self.contents@ == self.persistent_memory_view@.flush().committed()
+        }
+
+        closed spec fn len(&self) -> nat {
+            self@.len()
+        }
+
+        closed spec fn constants(&self) -> PersistentMemoryConstants
+        {
+            PersistentMemoryConstants { impervious_to_corruption: true }
+        }
+
+        #[verifier::external_body]
+        fn read(&self, addr: u64, num_bytes: u64) -> (bytes: Vec<u8>)
+        {
+            let addr_usize: usize = addr.try_into().unwrap();
+            let num_bytes_usize: usize = num_bytes.try_into().unwrap();
+            self.contents[addr_usize..addr_usize+num_bytes_usize].to_vec()
+        }
+
+        #[verifier::external_body]
+        fn write(&mut self, addr: u64, bytes: &[u8])
+        {
+            let addr_usize: usize = addr.try_into().unwrap();
+            self.contents.splice(addr_usize..addr_usize+bytes.len(), bytes.iter().cloned());
+            self.persistent_memory_view = Ghost(self.persistent_memory_view@.write(addr as int, bytes@))
+        }
+
+    }
+
     // The `VolatileMemoryMockingPersistentMemoryRegions` struct
     // contains a vector of volatile memory regions.
     pub struct VolatileMemoryMockingPersistentMemoryRegions
@@ -134,10 +134,12 @@ verus! {
     /// implements the trait `PersistentMemoryRegions`.
 
     impl PersistentMemoryRegions for VolatileMemoryMockingPersistentMemoryRegions {
+        type PMRegion = VolatileMemoryMockingPersistentMemoryRegion;
+
         closed spec fn view(&self) -> PersistentMemoryRegionsView
         {
             PersistentMemoryRegionsView {
-                regions: self.pms@.map(|_idx, pm: VolatileMemoryMockingPersistentMemoryRegion| pm@)
+                regions: self.pms@.map(|_idx, pm: Self::PMRegion| pm@)
             }
         }
 
