@@ -1216,7 +1216,6 @@ verus! {
                 }
         {
             let bytes = pm.read(incorruptible_bool_pos, 8);
-            // let ib = u64_from_le_bytes(bytes.as_slice());
             let ib_bytes = bytes.as_slice();
             let ib = u64_from_le_bytes(ib_bytes);
             let ghost addrs = Seq::<int>::new(8, |i: int| i + incorruptible_bool_pos);
@@ -1361,7 +1360,8 @@ verus! {
                 PM: PersistentMemoryRegion
             requires
                 old(pm).inv(),
-                old(pm)@.len() == device_size
+                old(pm)@.len() == device_size,
+                old(pm)@.no_outstanding_writes(),
             ensures
                 pm.inv(),
                 pm.constants() == old(pm).constants(),
@@ -1393,8 +1393,8 @@ verus! {
             let header_bytes = header_to_bytes(&log_header);
 
             let initial_ib_bytes = u64_to_le_bytes(CDB_FALSE);
-            pm.write(header1_pos, header_bytes.as_slice());
-            pm.write(incorruptible_bool_pos, initial_ib_bytes.as_slice());
+            pm.sync_write(header1_pos, header_bytes.as_slice());
+            pm.sync_write(incorruptible_bool_pos, initial_ib_bytes.as_slice());
 
             proof {
                 let committed = pm@.committed();
@@ -1437,6 +1437,7 @@ verus! {
                         Self::recover(pm_state) ==
                         Self::recover(old(wrpm)@.committed())
                 }),
+                old(wrpm)@.no_outstanding_writes(),
             ensures
                 Self::recover(old(wrpm)@.committed()) == Self::recover(wrpm@.committed()),
                 wrpm.constants() == old(wrpm).constants(),

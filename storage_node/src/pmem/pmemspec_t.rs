@@ -208,6 +208,13 @@ verus! {
                                          else { pre_byte }) }
         }
 
+        pub open spec fn sync_write(self, addr: int, bytes: Seq<u8>) -> Self
+        {
+            Self { state: self.state.map(|pos: int, pre_byte: PersistentMemoryByte|
+                                         if addr <= pos < addr + bytes.len() { pre_byte.write(bytes[pos - addr]).flush() }
+                                         else { pre_byte }) }
+        }
+
         pub open spec fn flush(self) -> Self
         {
             Self { state: self.state.map(|_addr, b: PersistentMemoryByte| b.flush()) }
@@ -382,6 +389,17 @@ verus! {
                 self.constants() == old(self).constants(),
                 self@ == old(self)@.write(addr as int, bytes@);
 
+        fn sync_write(&mut self, addr: u64, bytes: &[u8])
+            requires
+                old(self).inv(),
+                addr + bytes@.len() <= old(self)@.len(),
+                // Writes aren't allowed where there are already outstanding writes.
+                old(self)@.no_outstanding_writes_in_range(addr as int, addr + bytes@.len()),
+            ensures
+                self.inv(),
+                self.constants() == old(self).constants(),
+                self@ == old(self)@.write(addr as int, bytes@).flush();
+
         fn flush(&mut self)
             requires
                 old(self).inv()
@@ -451,6 +469,17 @@ verus! {
                 self.inv(),
                 self.constants() == old(self).constants(),
                 self@ == old(self)@.write(index as int, addr as int, bytes@);
+
+        fn sync_write(&mut self, index: usize, addr: u64, bytes: &[u8])
+            requires
+                old(self).inv(),
+                addr + bytes@.len() <= old(self)@[index as int].len(),
+                // Writes aren't allowed where there are already outstanding writes.
+                old(self)@.no_outstanding_writes_in_range(index as int, addr as int, addr + bytes@.len()),
+            ensures
+                self.inv(),
+                self.constants() == old(self).constants(),
+                self@ == old(self)@.write(index as int, addr as int, bytes@).flush();
 
         fn flush(&mut self)
             requires

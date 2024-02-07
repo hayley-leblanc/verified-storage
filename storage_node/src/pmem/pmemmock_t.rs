@@ -100,6 +100,15 @@ verus! {
             self.persistent_memory_view = Ghost(self.persistent_memory_view@.write(addr as int, bytes@))
         }
 
+        #[verifier::external_body]
+        fn sync_write(&mut self, addr: u64, bytes: &[u8])
+        {
+            let addr_usize: usize = addr.try_into().unwrap();
+            self.contents.splice(addr_usize..addr_usize+bytes.len(), bytes.iter().cloned());
+            self.persistent_memory_view = Ghost(self.persistent_memory_view@.sync_write(addr as int, bytes@))
+        }
+
+
         fn flush(&mut self)
         {
             // Because of our invariant, we don't have to do anything
@@ -163,6 +172,12 @@ verus! {
         fn write(&mut self, index: usize, addr: u64, bytes: &[u8])
         {
             self.pms[index].write(addr, bytes)
+        }
+
+        #[verifier::external_body]
+        fn sync_write(&mut self, index: usize, addr: u64, bytes: &[u8])
+        {
+            self.pms[index].sync_write(addr, bytes)
         }
 
         #[verifier::external_body]
