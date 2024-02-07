@@ -539,6 +539,28 @@ verus! {
             self.pm_region.write(addr, bytes)
         }
 
+        /// This function is the same as `write` except that it performs a flush at the end,
+        /// making the write synchronous. The preconditions are the same because any
+        /// possible crash state of a non-synchronous write is also a crash state of a synchronous
+        /// write.
+        pub exec fn sync_write(&mut self, addr: u64, bytes: &[u8], perm: Tracked<&Perm>)
+            requires
+                old(self).inv(),
+                addr + bytes@.len() <= old(self)@.len(),
+                addr + bytes@.len() <= u64::MAX,
+                old(self)@.no_outstanding_writes_in_range(addr as int, addr + bytes@.len()),
+                // The key thing the caller must prove is that all crash states are authorized by `perm`
+                forall |s| old(self)@.write(addr as int, bytes@).can_crash_as(s)
+                    ==> #[trigger] perm@.check_permission(s),
+            ensures
+                self.inv(),
+                self.constants() == old(self).constants(),
+                self@ == old(self)@.write(addr as int, bytes@).flush(),
+        {
+            self.pm_region.write(addr, bytes);
+            self.pm_region.flush()
+        }
+
         // Even though the memory is write-restricted, no restrictions are
         // placed on calling `flush`. After all, `flush` can only narrow
         // the possible states the memory can crash into. So if the memory
@@ -563,6 +585,7 @@ verus! {
     /// accompanied by a tracked permission authorizing that write. The
     /// tracked permission must authorize every possible state that could
     /// result from crashing while the write is ongoing.
+    /// TODO: Reduce duplication between this and WRPMRegion
     #[allow(dead_code)]
     pub struct WriteRestrictedPersistentMemoryRegions<Perm, PMRegions>
         where
@@ -644,6 +667,30 @@ verus! {
                 self@ == old(self)@.write(index as int, addr as int, bytes@),
         {
             self.pm_regions.write(index, addr, bytes)
+        }
+
+        /// This function is the same as `write` except that it performs a flush at the end,
+        /// making the write synchronous. The preconditions are the same because any
+        /// possible crash state of a non-synchronous write is also a crash state of a synchronous
+        /// write. Note that this function will flush any outstanding writes to *all* regions,
+        /// since flush is a global operation.
+        pub exec fn sync_write(&mut self, index: usize, addr: u64, bytes: &[u8], perm: Tracked<&Perm>)
+            requires
+                old(self).inv(),
+                index < old(self)@.len(),
+                addr + bytes@.len() <= old(self)@[index as int].len(),
+                addr + bytes@.len() <= u64::MAX,
+                old(self)@.no_outstanding_writes_in_range(index as int, addr as int, addr + bytes@.len()),
+                // The key thing the caller must prove is that all crash states are authorized by `perm`
+                forall |s| old(self)@.write(index as int, addr as int, bytes@).can_crash_as(s)
+                    ==> #[trigger] perm@.check_permission(s),
+            ensures
+                self.inv(),
+                self.constants() == old(self).constants(),
+                self@ == old(self)@.write(index as int, addr as int, bytes@).flush(),
+        {
+            self.pm_regions.write(index, addr, bytes);
+            self.pm_regions.flush()
         }
 
         // Even though the memory is write-restricted, no restrictions are
