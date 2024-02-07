@@ -466,6 +466,12 @@ verus! {
         spec fn check_permission(&self, state: State) -> bool;
     }
 
+    /// A `WriteRestrictedPersistentMemoryRegions` is a wrapper around a
+    /// single persistent memory region that restricts how it can
+    /// be written. Specifically, it only permits a write if it's
+    /// accompanied by a tracked permission authorizing that write. The
+    /// tracked permission must authorize every possible state that could
+    /// result from crashing while the write is ongoing.
     pub struct WriteRestrictedPersistentMemoryRegion<Perm, PMRegion>
         where
             Perm: CheckPermission<Seq<u8>>,
