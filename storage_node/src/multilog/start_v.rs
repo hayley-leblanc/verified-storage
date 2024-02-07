@@ -12,7 +12,7 @@ use crate::multilog::layout_v::*;
 use crate::multilog::multilogimpl_t::MultiLogErr;
 use crate::multilog::multilogimpl_v::LogInfo;
 use crate::multilog::multilogspec_t::AbstractMultiLogState;
-use crate::pmem::pmemspec_t::{PersistentMemoryRegions, CRC_SIZE};
+use crate::pmem::pmemspec_t::{PersistentMemoryRegion, PersistentMemoryRegions, CRC_SIZE};
 use crate::pmem::pmemutil_v::{check_cdb, check_crc};
 use builtin::*;
 use builtin_macros::*;
@@ -33,7 +33,7 @@ verus! {
     // to a CRC error.
     //
     // `Ok(b)` -- The CDB could be read and represents the boolean `b`.
-    pub fn read_cdb<PMRegions: PersistentMemoryRegions>(pm_regions: &PMRegions) -> (result: Result<bool, MultiLogErr>)
+    pub fn read_cdb<PMRegion: PersistentMemoryRegion, PMRegions: PersistentMemoryRegions<PMRegion>>(pm_regions: &PMRegions) -> (result: Result<bool, MultiLogErr>)
         requires
             pm_regions.inv(),
             pm_regions@.len() > 0,
@@ -102,7 +102,7 @@ verus! {
     // The region's contents aren't valid, i.e., they're not
     // recoverable to a valid log. The user must have requested to
     // start using the wrong region of persistent memory.
-    fn read_log_variables<PMRegions: PersistentMemoryRegions>(
+    fn read_log_variables<PMRegion: PersistentMemoryRegion, PMRegions: PersistentMemoryRegions<PMRegion>>(
         pm_regions: &PMRegions,
         multilog_id: u128,
         cdb: bool,
@@ -353,7 +353,7 @@ verus! {
     //
     // `Ok(log_info)` -- The information `log_info` has been
     // successfully read.
-    pub fn read_logs_variables<PMRegions: PersistentMemoryRegions>(
+    pub fn read_logs_variables<PMRegion: PersistentMemoryRegion, PMRegions: PersistentMemoryRegions<PMRegion>>(
         pm_regions: &PMRegions,
         multilog_id: u128,
         cdb: bool,

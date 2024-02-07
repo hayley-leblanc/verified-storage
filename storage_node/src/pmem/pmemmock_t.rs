@@ -52,30 +52,6 @@ verus! {
             let persistent_memory_view = Ghost(PersistentMemoryRegionView { state });
             Ok(Self { contents, persistent_memory_view })
         }
-
-        pub fn get_region_size(&self) -> (result: u64)
-            requires
-                self.inv()
-            ensures
-                result == self@.len()
-        {
-            self.contents.len() as u64
-        }
-
-        pub fn flush(&mut self)
-            requires
-                old(self).inv()
-            ensures
-                self.inv(),
-                self@ == old(self)@.flush()
-        {
-            // Because of our invariant, we don't have to do anything
-            // to the actual contents. We just have to update the
-            // abstract view to reflect the flush having happened.
-
-            self.persistent_memory_view = Ghost(self.persistent_memory_view@.flush());
-            assert (self.contents@ =~= self.persistent_memory_view@.flush().committed());
-        }
     }
 
     impl PersistentMemoryRegion for VolatileMemoryMockingPersistentMemoryRegion {
@@ -104,6 +80,10 @@ verus! {
             PersistentMemoryConstants { impervious_to_corruption: true }
         }
 
+        fn get_region_size(&self) -> u64 {
+            self.contents.len() as u64
+        }
+
         #[verifier::external_body]
         fn read(&self, addr: u64, num_bytes: u64) -> (bytes: Vec<u8>)
         {
@@ -120,26 +100,36 @@ verus! {
             self.persistent_memory_view = Ghost(self.persistent_memory_view@.write(addr as int, bytes@))
         }
 
+        fn flush(&mut self)
+        {
+            // Because of our invariant, we don't have to do anything
+            // to the actual contents. We just have to update the
+            // abstract view to reflect the flush having happened.
+
+            self.persistent_memory_view = Ghost(self.persistent_memory_view@.flush());
+            assert (self.contents@ =~= self.persistent_memory_view@.flush().committed());
+        }
+
     }
 
     // The `VolatileMemoryMockingPersistentMemoryRegions` struct
     // contains a vector of volatile memory regions.
-    pub struct VolatileMemoryMockingPersistentMemoryRegions
+    pub struct VolatileMemoryMockingPersistentMemoryRegions<PMRegion: PersistentMemoryRegion>
     {
-        pub pms: Vec<VolatileMemoryMockingPersistentMemoryRegion>
+        // pub pms: Vec<VolatileMemoryMockingPersistentMemoryRegion>
+        pub pms: Vec<PMRegion>
     }
 
     /// So that `VolatileMemoryMockingPersistentMemoryRegions` can be
     /// used to mock a collection of persistent memory regions, it
     /// implements the trait `PersistentMemoryRegions`.
 
-    impl PersistentMemoryRegions for VolatileMemoryMockingPersistentMemoryRegions {
-        type PMRegion = VolatileMemoryMockingPersistentMemoryRegion;
+    impl<PMRegion: PersistentMemoryRegion> PersistentMemoryRegions<PMRegion> for VolatileMemoryMockingPersistentMemoryRegions<PMRegion> {
 
         closed spec fn view(&self) -> PersistentMemoryRegionsView
         {
             PersistentMemoryRegionsView {
-                regions: self.pms@.map(|_idx, pm: Self::PMRegion| pm@)
+                regions: self.pms@.map(|_idx, pm: PMRegion | pm@)
             }
         }
 
@@ -194,7 +184,7 @@ verus! {
     /// `new_mock_only_for_use_in_testing` to make clear that it
     /// shouldn't be used in production.
 
-    impl VolatileMemoryMockingPersistentMemoryRegions {
+    impl VolatileMemoryMockingPersistentMemoryRegions<VolatileMemoryMockingPersistentMemoryRegion> {
         #[verifier::external_body]
         pub fn new_mock_only_for_use_in_testing(region_sizes: &[u64]) -> (result: Result<Self, ()>)
             ensures

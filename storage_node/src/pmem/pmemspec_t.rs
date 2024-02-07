@@ -345,6 +345,12 @@ verus! {
 
         spec fn len(&self) -> nat;
 
+        fn get_region_size(&self) -> (result: u64)
+            requires
+                self.inv(),
+            ensures
+                result == self@.len();
+
         /// This is the model of some routine that reads the
         /// `num_bytes` bytes at address `addr`.
         fn read(&self, addr: u64, num_bytes: u64) -> (bytes: Vec<u8>)
@@ -375,16 +381,21 @@ verus! {
                 self.inv(),
                 self.constants() == old(self).constants(),
                 self@ == old(self)@.write(addr as int, bytes@);
+
+        fn flush(&mut self)
+            requires
+                old(self).inv()
+            ensures
+                self.inv(),
+                self.constants() == old(self).constants(),
+                self@ == old(self)@.flush();
     }
 
     /// The `PersistentMemoryRegions` trait represents an ordered list
     /// of one or more persistent memory regions.
 
-    pub trait PersistentMemoryRegions : Sized
+    pub trait PersistentMemoryRegions<PMRegion: PersistentMemoryRegion> : Sized
     {
-        // TODO: maybe make PersistentMemoryRegions generic over PMRegion?
-        type PMRegion: PersistentMemoryRegion;
-
         spec fn view(&self) -> PersistentMemoryRegionsView;
 
         spec fn inv(&self) -> bool;
@@ -448,32 +459,43 @@ verus! {
                 self@ == old(self)@.flush();
     }
 
+    pub trait CheckPermission<State>
+    {
+        spec fn check_permission(&self, state: State) -> bool;
+    }
+
+    pub struct WriteRestrictedPersistentMemoryRegion<Perm, PMRegion>
+        where
+            Perm: CheckPermission<Seq<u8>>,
+            PMRegion: PersistentMemoryRegion
+    {
+        pm_region: PMRegion,
+        ghost perm: Option<Perm> // Needed to work around Rust limitation that Perm must be referenced
+    }
+
     /// A `WriteRestrictedPersistentMemoryRegions` is a wrapper around a
     /// collection of persistent memory regions that restricts how it can
     /// be written. Specifically, it only permits a write if it's
     /// accompanied by a tracked permission authorizing that write. The
     /// tracked permission must authorize every possible state that could
     /// result from crashing while the write is ongoing.
-
-    pub trait CheckPermission<State>
-    {
-        spec fn check_permission(&self, state: State) -> bool;
-    }
-
     #[allow(dead_code)]
-    pub struct WriteRestrictedPersistentMemoryRegions<Perm, PMRegions>
+    pub struct WriteRestrictedPersistentMemoryRegions<Perm, PMRegion, PMRegions>
         where
             Perm: CheckPermission<Seq<Seq<u8>>>,
-            PMRegions: PersistentMemoryRegions
+            PMRegions: PersistentMemoryRegions<PMRegion>,
+            PMRegion: PersistentMemoryRegion,
     {
+        _pm_region: std::marker::PhantomData<PMRegion>,
         pm_regions: PMRegions,
         ghost perm: Option<Perm>, // Needed to work around Rust limitation that Perm must be referenced
     }
 
-    impl<Perm, PMRegions> WriteRestrictedPersistentMemoryRegions<Perm, PMRegions>
+    impl<Perm, PMRegion, PMRegions> WriteRestrictedPersistentMemoryRegions<Perm, PMRegion, PMRegions>
         where
             Perm: CheckPermission<Seq<Seq<u8>>>,
-            PMRegions: PersistentMemoryRegions
+            PMRegions: PersistentMemoryRegions<PMRegion>,
+            PMRegion: PersistentMemoryRegion,
     {
         pub closed spec fn view(&self) -> PersistentMemoryRegionsView
         {
@@ -499,6 +521,7 @@ verus! {
                 wrpm_regions.constants() == pm_regions.constants()
         {
             Self {
+                _pm_region: std::marker::PhantomData,
                 pm_regions: pm_regions,
                 perm: None
             }

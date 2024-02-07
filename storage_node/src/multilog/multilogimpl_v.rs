@@ -83,14 +83,15 @@ verus! {
         //
         // Most of the conjuncts in this invariant are defined in the
         // file `inv_v.rs`. See that file for detailed explanations.
-        pub closed spec fn inv<Perm, PMRegions>(
+        pub closed spec fn inv<Perm, PMRegion, PMRegions>(
             &self,
-            wrpm_regions: &WriteRestrictedPersistentMemoryRegions<Perm, PMRegions>,
+            wrpm_regions: &WriteRestrictedPersistentMemoryRegions<Perm, PMRegion, PMRegions>,
             multilog_id: u128,
         ) -> bool
             where
                 Perm: CheckPermission<Seq<Seq<u8>>>,
-                PMRegions: PersistentMemoryRegions
+                PMRegions: PersistentMemoryRegions<PMRegion>,
+                PMRegion: PersistentMemoryRegion
         {
             &&& wrpm_regions.inv() // whatever the persistent memory regions require as an invariant
             &&& no_outstanding_writes_to_metadata(wrpm_regions@, self.num_logs)
@@ -111,10 +112,11 @@ verus! {
         // to store an initial empty multilog. It returns a vector
         // listing the capacities of the logs. See `main.rs` for more
         // documentation.
-        pub exec fn setup<PMRegions>(pm_regions: &mut PMRegions, multilog_id: u128)
+        pub exec fn setup<PMRegion, PMRegions>(pm_regions: &mut PMRegions, multilog_id: u128)
                                      -> (result: Result<Vec<u64>, MultiLogErr>)
             where
-                PMRegions: PersistentMemoryRegions,
+                PMRegions: PersistentMemoryRegions<PMRegion>,
+                PMRegion: PersistentMemoryRegion
             requires
                 old(pm_regions).inv()
             ensures
@@ -226,14 +228,15 @@ verus! {
         // persistent memory regions `wrpm_regions`. This restricts
         // how we can write `wrpm_regions`. This is moot, though,
         // because we don't ever write to the memory.
-        pub exec fn start<PMRegions>(
-            wrpm_regions: &mut WriteRestrictedPersistentMemoryRegions<TrustedPermission, PMRegions>,
+        pub exec fn start<PMRegion, PMRegions>(
+            wrpm_regions: &mut WriteRestrictedPersistentMemoryRegions<TrustedPermission, PMRegion, PMRegions>,
             multilog_id: u128,
             Tracked(perm): Tracked<&TrustedPermission>,
             Ghost(state): Ghost<AbstractMultiLogState>
         ) -> (result: Result<Self, MultiLogErr>)
             where
-                PMRegions: PersistentMemoryRegions
+                PMRegions: PersistentMemoryRegions<PMRegion>,
+                PMRegion: PersistentMemoryRegion
             requires
                 old(wrpm_regions).inv(),
                 Self::recover(old(wrpm_regions)@.flush().committed(), multilog_id) == Some(state),
@@ -323,16 +326,17 @@ verus! {
         // initiating the write is safe. That is, any such crash must
         // put the memory in a state that recovers as the current
         // abstract state with all pending appends dropped.
-        pub exec fn tentatively_append<PMRegions>(
+        pub exec fn tentatively_append<PMRegion, PMRegions>(
             &mut self,
-            wrpm_regions: &mut WriteRestrictedPersistentMemoryRegions<TrustedPermission, PMRegions>,
+            wrpm_regions: &mut WriteRestrictedPersistentMemoryRegions<TrustedPermission, PMRegion, PMRegions>,
             which_log: u32,
             bytes_to_append: &[u8],
             Ghost(multilog_id): Ghost<u128>,
             Tracked(perm): Tracked<&TrustedPermission>
         ) -> (result: Result<u128, MultiLogErr>)
             where
-                PMRegions: PersistentMemoryRegions
+                PMRegions: PersistentMemoryRegions<PMRegion>,
+                PMRegion: PersistentMemoryRegion
             requires
                 old(self).inv(&*old(wrpm_regions), multilog_id),
                 forall |s| #[trigger] perm.check_permission(s) <==>
@@ -560,16 +564,17 @@ verus! {
         // after the next flush, since we're going to be doing a flush.
         // This weaker requirement allows a performance optimization: the
         // caller doesn't have to flush before calling this function.
-        exec fn update_level3_metadata<PMRegions>(
+        exec fn update_level3_metadata<PMRegion, PMRegions>(
             &mut self,
-            wrpm_regions: &mut WriteRestrictedPersistentMemoryRegions<TrustedPermission, PMRegions>,
+            wrpm_regions: &mut WriteRestrictedPersistentMemoryRegions<TrustedPermission, PMRegion, PMRegions>,
             Ghost(multilog_id): Ghost<u128>,
             Ghost(prev_infos): Ghost<Seq<LogInfo>>,
             Ghost(prev_state): Ghost<AbstractMultiLogState>,
             Tracked(perm): Tracked<&TrustedPermission>,
         )
             where
-                PMRegions: PersistentMemoryRegions
+                PMRegions: PersistentMemoryRegions<PMRegion>,
+                PMRegion: PersistentMemoryRegion,
             requires
                 old(wrpm_regions).inv(),
                 memory_matches_cdb(old(wrpm_regions)@, old(self).cdb),
@@ -808,14 +813,15 @@ verus! {
         // current abstract state with all pending appends dropped, or
         // (2) the abstract state after all pending appends are
         // committed.
-        pub exec fn commit<PMRegions>(
+        pub exec fn commit<PMRegion, PMRegions>(
             &mut self,
-            wrpm_regions: &mut WriteRestrictedPersistentMemoryRegions<TrustedPermission, PMRegions>,
+            wrpm_regions: &mut WriteRestrictedPersistentMemoryRegions<TrustedPermission, PMRegion, PMRegions>,
             Ghost(multilog_id): Ghost<u128>,
             Tracked(perm): Tracked<&TrustedPermission>
         ) -> (result: Result<(), MultiLogErr>)
             where
-                PMRegions: PersistentMemoryRegions
+                PMRegions: PersistentMemoryRegions<PMRegion>,
+                PMRegion: PersistentMemoryRegion
             requires
                 old(self).inv(&*old(wrpm_regions), multilog_id),
                 forall |s| #[trigger] perm.check_permission(s) <==> {
@@ -908,16 +914,17 @@ verus! {
         // state that recovers as either (1) the current abstract state
         // with all pending appends dropped, or (2) the state after
         // advancing the head and then dropping all pending appends.
-        pub exec fn advance_head<PMRegions>(
+        pub exec fn advance_head<PMRegion, PMRegions>(
             &mut self,
-            wrpm_regions: &mut WriteRestrictedPersistentMemoryRegions<TrustedPermission, PMRegions>,
+            wrpm_regions: &mut WriteRestrictedPersistentMemoryRegions<TrustedPermission, PMRegion, PMRegions>,
             which_log: u32,
             new_head: u128,
             Ghost(multilog_id): Ghost<u128>,
             Tracked(perm): Tracked<&TrustedPermission>
         ) -> (result: Result<(), MultiLogErr>)
             where
-                PMRegions: PersistentMemoryRegions
+                PMRegions: PersistentMemoryRegions<PMRegion>,
+                PMRegion: PersistentMemoryRegion
             requires
                 old(self).inv(&*old(wrpm_regions), multilog_id),
                 forall |s| #[trigger] perm.check_permission(s) <==> {
@@ -1159,9 +1166,9 @@ verus! {
         // vector containing the read bytes. It doesn't guarantee that
         // those bytes aren't corrupted by persistent memory corruption.
         // See `main.rs` for more documentation and examples of its use.
-        pub exec fn read<Perm, PMRegions>(
+        pub exec fn read<Perm, PMRegion, PMRegions>(
             &self,
-            wrpm_regions: &WriteRestrictedPersistentMemoryRegions<Perm, PMRegions>,
+            wrpm_regions: &WriteRestrictedPersistentMemoryRegions<Perm, PMRegion, PMRegions>,
             which_log: u32,
             pos: u128,
             len: u64,
@@ -1169,7 +1176,8 @@ verus! {
         ) -> (result: Result<Vec<u8>, MultiLogErr>)
             where
                 Perm: CheckPermission<Seq<Seq<u8>>>,
-                PMRegions: PersistentMemoryRegions
+                PMRegions: PersistentMemoryRegions<PMRegion>,
+                PMRegion: PersistentMemoryRegion
             requires
                 self.inv(wrpm_regions, multilog_id),
                 pos + len <= u128::MAX
@@ -1347,15 +1355,16 @@ verus! {
         // and capacity of one of the logs. See `main.rs` for more
         // documentation and examples of its use.
         #[allow(unused_variables)]
-        pub exec fn get_head_tail_and_capacity<Perm, PMRegions>(
+        pub exec fn get_head_tail_and_capacity<Perm, PMRegion, PMRegions>(
             &self,
-            wrpm_regions: &WriteRestrictedPersistentMemoryRegions<Perm, PMRegions>,
+            wrpm_regions: &WriteRestrictedPersistentMemoryRegions<Perm, PMRegion, PMRegions>,
             which_log: u32,
             Ghost(multilog_id): Ghost<u128>,
         ) -> (result: Result<(u128, u128, u64), MultiLogErr>)
             where
                 Perm: CheckPermission<Seq<Seq<u8>>>,
-                PMRegions: PersistentMemoryRegions
+                PMRegions: PersistentMemoryRegions<PMRegion>,
+                PMRegion: PersistentMemoryRegion
             requires
                 self.inv(wrpm_regions, multilog_id)
             ensures

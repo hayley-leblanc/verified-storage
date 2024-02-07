@@ -202,6 +202,7 @@ use vstd::prelude::*;
 pub mod math_v;
 pub mod multilog;
 pub mod pmem;
+// pub mod singlelog;
 
 use crate::multilog::multilogimpl_t::{MultiLogErr, MultiLogImpl};
 #[cfg(windows)]
