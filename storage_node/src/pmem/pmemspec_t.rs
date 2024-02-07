@@ -374,7 +374,7 @@ verus! {
         fn write(&mut self, addr: u64, bytes: &[u8])
             requires
                 old(self).inv(),
-                addr + bytes@.len() <= old(self).len(),
+                addr + bytes@.len() <= old(self)@.len(),
                 // Writes aren't allowed where there are already outstanding writes.
                 old(self)@.no_outstanding_writes_in_range(addr as int, addr + bytes@.len()),
             ensures
@@ -474,6 +474,82 @@ verus! {
         pm_region: PMRegion,
         ghost perm: Option<Perm> // Needed to work around Rust limitation that Perm must be referenced
     }
+
+    impl<Perm, PMRegion> WriteRestrictedPersistentMemoryRegion<Perm, PMRegion>
+        where
+            Perm: CheckPermission<Seq<u8>>,
+            PMRegion: PersistentMemoryRegion
+    {
+        pub closed spec fn view(&self) -> PersistentMemoryRegionView
+        {
+            self.pm_region@
+        }
+
+        pub closed spec fn inv(&self) -> bool
+        {
+            self.pm_region.inv()
+        }
+
+        pub closed spec fn constants(&self) -> PersistentMemoryConstants
+        {
+            self.pm_region.constants()
+        }
+
+        // This executable function returns an immutable reference to the
+        // persistent memory region. This can be used to perform any
+        // operation (e.g., read) that can't mutate the memory. After all,
+        // this is a write-restricted memory, not a read-restricted one.
+        pub exec fn get_pm_region_ref(&self) -> (pm_region: &PMRegion)
+            requires
+                self.inv(),
+            ensures
+                pm_region.inv(),
+                pm_region@ == self@,
+                pm_region.constants() == self.constants()
+        {
+            &self.pm_region
+        }
+
+        // This executable function is the only way to perform a write, and
+        // it requires the caller to supply permission authorizing the
+        // write. The caller must prove that for every state this memory
+        // can crash and recover into, the permission authorizes that
+        // state.
+        #[allow(unused_variables)]
+        pub exec fn write(&mut self, addr: u64, bytes: &[u8], perm: Tracked<&Perm>)
+            requires
+                old(self).inv(),
+                addr + bytes@.len() <= old(self)@.len(),
+                addr + bytes@.len() <= u64::MAX,
+                old(self)@.no_outstanding_writes_in_range(addr as int, addr + bytes@.len()),
+                // The key thing the caller must prove is that all crash states are authorized by `perm`
+                forall |s| old(self)@.write(addr as int, bytes@).can_crash_as(s)
+                    ==> #[trigger] perm@.check_permission(s),
+            ensures
+                self.inv(),
+                self.constants() == old(self).constants(),
+                self@ == old(self)@.write(addr as int, bytes@),
+        {
+            self.pm_region.write(addr, bytes)
+        }
+
+        // Even though the memory is write-restricted, no restrictions are
+        // placed on calling `flush`. After all, `flush` can only narrow
+        // the possible states the memory can crash into. So if the memory
+        // is already restricted to only crash into good states, `flush`
+        // automatically maintains that restriction.
+        pub exec fn flush(&mut self)
+            requires
+                old(self).inv()
+            ensures
+                self.inv(),
+                self@ == old(self)@.flush(),
+                self.constants() == old(self).constants(),
+        {
+            self.pm_region.flush()
+        }
+    }
+
 
     /// A `WriteRestrictedPersistentMemoryRegions` is a wrapper around a
     /// collection of persistent memory regions that restricts how it can
