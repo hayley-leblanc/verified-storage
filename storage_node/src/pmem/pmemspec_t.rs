@@ -501,6 +501,20 @@ verus! {
             self.pm_region.constants()
         }
 
+        pub exec fn new(pm_region: PMRegion) -> (wrpm_region: Self)
+            requires
+                pm_region.inv()
+            ensures
+                wrpm_region.inv(),
+                wrpm_region@ == pm_region@,
+                wrpm_region.constants() == pm_region.constants()
+        {
+            Self {
+                pm_region: pm_region,
+                perm: None
+            }
+        }
+
         // This executable function returns an immutable reference to the
         // persistent memory region. This can be used to perform any
         // operation (e.g., read) that can't mutate the memory. After all,
