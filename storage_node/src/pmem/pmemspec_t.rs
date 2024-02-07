@@ -394,8 +394,10 @@ verus! {
     /// The `PersistentMemoryRegions` trait represents an ordered list
     /// of one or more persistent memory regions.
 
-    pub trait PersistentMemoryRegions<PMRegion: PersistentMemoryRegion> : Sized
+    pub trait PersistentMemoryRegions: Sized
     {
+        type PMRegion : PersistentMemoryRegion;
+
         spec fn view(&self) -> PersistentMemoryRegionsView;
 
         spec fn inv(&self) -> bool;
@@ -480,22 +482,19 @@ verus! {
     /// tracked permission must authorize every possible state that could
     /// result from crashing while the write is ongoing.
     #[allow(dead_code)]
-    pub struct WriteRestrictedPersistentMemoryRegions<Perm, PMRegion, PMRegions>
+    pub struct WriteRestrictedPersistentMemoryRegions<Perm, PMRegions>
         where
             Perm: CheckPermission<Seq<Seq<u8>>>,
-            PMRegions: PersistentMemoryRegions<PMRegion>,
-            PMRegion: PersistentMemoryRegion,
+            PMRegions: PersistentMemoryRegions,
     {
-        _pm_region: std::marker::PhantomData<PMRegion>,
         pm_regions: PMRegions,
         ghost perm: Option<Perm>, // Needed to work around Rust limitation that Perm must be referenced
     }
 
-    impl<Perm, PMRegion, PMRegions> WriteRestrictedPersistentMemoryRegions<Perm, PMRegion, PMRegions>
+    impl<Perm, PMRegions> WriteRestrictedPersistentMemoryRegions<Perm, PMRegions>
         where
             Perm: CheckPermission<Seq<Seq<u8>>>,
-            PMRegions: PersistentMemoryRegions<PMRegion>,
-            PMRegion: PersistentMemoryRegion,
+            PMRegions: PersistentMemoryRegions,
     {
         pub closed spec fn view(&self) -> PersistentMemoryRegionsView
         {
@@ -521,7 +520,6 @@ verus! {
                 wrpm_regions.constants() == pm_regions.constants()
         {
             Self {
-                _pm_region: std::marker::PhantomData,
                 pm_regions: pm_regions,
                 perm: None
             }

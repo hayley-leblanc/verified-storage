@@ -357,7 +357,7 @@ verus! {
     // region will have been set up correctly. (This function doesn't
     // do the flush, for efficiency. That way we only need one flush
     // operation to flush all regions.)
-    fn write_setup_metadata_to_single_region<PMRegion: PersistentMemoryRegion, PMRegions: PersistentMemoryRegions<PMRegion>>(
+    fn write_setup_metadata_to_single_region<PMRegions: PersistentMemoryRegions>(
         pm_regions: &mut PMRegions,
         region_size: u64,
         multilog_id: u128,
@@ -482,7 +482,7 @@ verus! {
     // the resulting recovered abstract state will be the valid
     // initial value
     // `AbstractMultiLogState::initialize(log_capacities)`.
-    pub fn write_setup_metadata_to_all_regions<PMRegion: PersistentMemoryRegion, PMRegions: PersistentMemoryRegions<PMRegion>>(
+    pub fn write_setup_metadata_to_all_regions<PMRegions: PersistentMemoryRegions>(
         pm_regions: &mut PMRegions,
         region_sizes: &Vec<u64>,
         Ghost(log_capacities): Ghost<Seq<u64>>,

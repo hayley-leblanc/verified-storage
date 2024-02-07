@@ -114,22 +114,23 @@ verus! {
 
     // The `VolatileMemoryMockingPersistentMemoryRegions` struct
     // contains a vector of volatile memory regions.
-    pub struct VolatileMemoryMockingPersistentMemoryRegions<PMRegion: PersistentMemoryRegion>
+    pub struct VolatileMemoryMockingPersistentMemoryRegions
     {
-        // pub pms: Vec<VolatileMemoryMockingPersistentMemoryRegion>
-        pub pms: Vec<PMRegion>
+        pub pms: Vec<VolatileMemoryMockingPersistentMemoryRegion>
     }
 
     /// So that `VolatileMemoryMockingPersistentMemoryRegions` can be
     /// used to mock a collection of persistent memory regions, it
     /// implements the trait `PersistentMemoryRegions`.
 
-    impl<PMRegion: PersistentMemoryRegion> PersistentMemoryRegions<PMRegion> for VolatileMemoryMockingPersistentMemoryRegions<PMRegion> {
+    impl PersistentMemoryRegions for VolatileMemoryMockingPersistentMemoryRegions {
+
+        type PMRegion = VolatileMemoryMockingPersistentMemoryRegion;
 
         closed spec fn view(&self) -> PersistentMemoryRegionsView
         {
             PersistentMemoryRegionsView {
-                regions: self.pms@.map(|_idx, pm: PMRegion | pm@)
+                regions: self.pms@.map(|_idx, pm: VolatileMemoryMockingPersistentMemoryRegion | pm@)
             }
         }
 
@@ -184,7 +185,7 @@ verus! {
     /// `new_mock_only_for_use_in_testing` to make clear that it
     /// shouldn't be used in production.
 
-    impl VolatileMemoryMockingPersistentMemoryRegions<VolatileMemoryMockingPersistentMemoryRegion> {
+    impl VolatileMemoryMockingPersistentMemoryRegions {
         #[verifier::external_body]
         pub fn new_mock_only_for_use_in_testing(region_sizes: &[u64]) -> (result: Result<Self, ()>)
             ensures

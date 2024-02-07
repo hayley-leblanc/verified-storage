@@ -199,13 +199,13 @@ verus! {
     /// untrusted method, along with a restricting
     /// `TrustedPermission`, to limit what it's allowed to do.
 
-    pub struct MultiLogImpl<PMRegion: PersistentMemoryRegion, PMRegions: PersistentMemoryRegions<PMRegion>> {
+    pub struct MultiLogImpl<PMRegions: PersistentMemoryRegions> {
         untrusted_log_impl: UntrustedMultiLogImpl,
         multilog_id: Ghost<u128>,
-        wrpm_regions: WriteRestrictedPersistentMemoryRegions<TrustedPermission, PMRegion, PMRegions>
+        wrpm_regions: WriteRestrictedPersistentMemoryRegions<TrustedPermission, PMRegions>
     }
 
-    impl <PMRegion: PersistentMemoryRegion, PMRegions: PersistentMemoryRegions<PMRegion>> MultiLogImpl<PMRegion, PMRegions> {
+    impl <PMRegions: PersistentMemoryRegions> MultiLogImpl<PMRegions> {
         // The view of a `MultiLogImpl` is whatever the
         // `UntrustedMultiLogImpl` it wraps says it is.
         pub closed spec fn view(self) -> AbstractMultiLogState
@@ -292,7 +292,7 @@ verus! {
         // multilog operations were allowed to mutate them. See
         // `main.rs` for more documentation and an example of use.
         pub exec fn start(pm_regions: PMRegions, multilog_id: u128)
-                          -> (result: Result<MultiLogImpl<PMRegion, PMRegions>, MultiLogErr>)
+                          -> (result: Result<MultiLogImpl<PMRegions>, MultiLogErr>)
             requires
                 pm_regions.inv(),
                 UntrustedMultiLogImpl::recover(pm_regions@.flush().committed(), multilog_id).is_Some(),

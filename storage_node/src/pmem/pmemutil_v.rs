@@ -120,7 +120,7 @@ verus! {
     // This executable function returns a vector containing the sizes
     // of the regions in the given collection of persistent memory
     // regions.
-    pub fn get_region_sizes<PMRegion: PersistentMemoryRegion, PMRegions: PersistentMemoryRegions<PMRegion>>(pm_regions: &PMRegions) -> (result: Vec<u64>)
+    pub fn get_region_sizes<PMRegions: PersistentMemoryRegions>(pm_regions: &PMRegions) -> (result: Vec<u64>)
         requires
             pm_regions.inv()
         ensures
