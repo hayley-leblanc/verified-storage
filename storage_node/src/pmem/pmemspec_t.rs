@@ -148,6 +148,10 @@ verus! {
 
     pub spec const PERSISTENCE_CHUNK_SIZE: int = 8;
 
+    pub open spec fn regions_correspond(old_timestamp: PmTimestamp, new_timestamp: PmTimestamp) -> bool {
+        forall |pm: PersistentMemoryRegionsView| pm.timestamp_corresponds_to_regions(old_timestamp) ==> pm.timestamp_corresponds_to_regions(new_timestamp)
+    }
+
     /// We model the state of each byte of persistent memory as
     /// follows. `state_at_last_flush` contains the contents
     /// immediately after the most recent flush. `outstanding_write`
@@ -473,6 +477,7 @@ verus! {
                     &&& self@ == flushed
                     &&& self@.fence_timestamp == timestamp
                     &&& self@.timestamp_corresponds_to_regions(new_timestamp@)
+                    &&& regions_correspond(timestamp@, new_timestamp@)
                 })
             ;
     }
@@ -598,6 +603,7 @@ verus! {
                     &&& new_timestamp@.gt(timestamp@)
                     &&& self@ == flushed
                     &&& self@.timestamp_corresponds_to_regions(new_timestamp@)
+                    &&& regions_correspond(timestamp@, new_timestamp@)
                 }),
                 self.constants() == old(self).constants(),
         {
