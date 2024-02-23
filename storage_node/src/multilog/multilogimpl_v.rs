@@ -124,7 +124,7 @@ verus! {
                 PMRegions: PersistentMemoryRegions
             requires
                 old(pm_regions).inv(),
-                old(pm_regions)@.timestamp_corresponds_to_regions(timestamp),
+                old(pm_regions)@.device_id() == timestamp.device_id()
             ensures
                 pm_regions.inv(),
                 pm_regions.constants() == old(pm_regions).constants(),
@@ -141,10 +141,8 @@ verus! {
                                #[trigger] pm_regions@[i].len() == old(pm_regions)@[i].len()
                         &&& can_only_crash_as_state(pm_regions@, multilog_id, state)
                         &&& Self::recover(pm_regions@.committed(), multilog_id) == Some(state)
-                        // &&& Self::recover(pm_regions@.flush().committed(), multilog_id) == Some(state)
                         &&& state == state.drop_pending_appends()
-                        &&& regions_correspond(timestamp, new_timestamp@)
-                        &&& pm_regions@.timestamp_corresponds_to_regions(new_timestamp@)
+                        &&& pm_regions@.device_id() == new_timestamp@.device_id()
                     },
                     Err(MultiLogErr::InsufficientSpaceForSetup { which_log, required_space }) => {
                         let (flushed_regions, new_timestamp) = old(pm_regions)@.flush(timestamp);
@@ -255,7 +253,7 @@ verus! {
                 }),
                 old(wrpm_regions).inv(),
                 forall |s| #[trigger] perm.check_permission(s) <==> Self::recover(s, multilog_id) == Some(state),
-                old(wrpm_regions)@.timestamp_corresponds_to_regions(timestamp@)
+                old(wrpm_regions)@.device_id() == timestamp@.device_id()
             ensures
                 wrpm_regions.inv(),
                 wrpm_regions.constants() == old(wrpm_regions).constants(),
@@ -348,7 +346,7 @@ verus! {
                 old(self).inv(&*old(wrpm_regions), multilog_id),
                 forall |s| #[trigger] perm.check_permission(s) <==>
                     Self::recover(s, multilog_id) == Some(old(self)@.drop_pending_appends()),
-                old(wrpm_regions)@.timestamp_corresponds_to_regions(timestamp@),
+                old(wrpm_regions)@.device_id() == timestamp@.device_id()
             ensures
                 self.inv(wrpm_regions, multilog_id),
                 wrpm_regions.constants() == old(wrpm_regions).constants(),
@@ -605,12 +603,12 @@ verus! {
                           ||| Self::recover(s, multilog_id) == Some(prev_state.drop_pending_appends())
                           ||| Self::recover(s, multilog_id) == Some(old(self).state@.drop_pending_appends())
                       } ==> #[trigger] perm.check_permission(s),
-                old(wrpm_regions)@.timestamp_corresponds_to_regions(timestamp@),
+                old(wrpm_regions)@.device_id() == timestamp@.device_id()
             ensures
                 self.inv(wrpm_regions, multilog_id),
                 wrpm_regions.constants() == old(wrpm_regions).constants(),
                 self.state == old(self).state,
-                wrpm_regions@.timestamp_corresponds_to_regions(new_timestamp@),
+                old(wrpm_regions)@.device_id() == timestamp@.device_id(),
                 new_timestamp@.gt(timestamp@)
         {
             let original_timestamp = timestamp;
@@ -674,7 +672,7 @@ verus! {
                         metadata_consistent_with_info(flushed[w], multilog_id, self.num_logs, which_log,
                                                         !self.cdb, self.infos@[w])
                     },
-                    wrpm_regions@.timestamp_corresponds_to_regions(timestamp@),
+                    wrpm_regions@.device_id() == timestamp@.device_id()
             {
                 assert(is_valid_log_index(current_log, self.num_logs));
                 let ghost cur = current_log as int;
@@ -861,7 +859,7 @@ verus! {
                     ||| Self::recover(s, multilog_id) == Some(old(self)@.drop_pending_appends())
                     ||| Self::recover(s, multilog_id) == Some(old(self)@.commit().drop_pending_appends())
                 },
-                old(wrpm_regions)@.timestamp_corresponds_to_regions(timestamp@),
+                old(wrpm_regions)@.device_id() == timestamp@.device_id()
             ensures
                 self.inv(wrpm_regions, multilog_id),
                 wrpm_regions.constants() == old(wrpm_regions).constants(),
@@ -971,7 +969,7 @@ verus! {
                     ||| Self::recover(s, multilog_id) ==
                         Some(old(self)@.advance_head(which_log as int, new_head as int).drop_pending_appends())
                 },
-                old(wrpm_regions)@.timestamp_corresponds_to_regions(timestamp@),
+                old(wrpm_regions)@.device_id() == timestamp@.device_id()
             ensures
                 self.inv(wrpm_regions, multilog_id),
                 wrpm_regions.constants() == old(wrpm_regions).constants(),

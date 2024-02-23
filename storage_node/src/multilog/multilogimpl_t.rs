@@ -220,8 +220,9 @@ verus! {
             self.wrpm_regions.constants()
         }
 
-        pub closed spec fn corresponds_to_timestamp(&self, timestamp: PmTimestamp) -> bool {
-            self.wrpm_regions@.timestamp_corresponds_to_regions(timestamp)
+        pub closed spec fn device_id(&self) -> u128
+        {
+            self.wrpm_regions@.device_id()
         }
 
         // This is the validity condition that is maintained between
@@ -251,7 +252,7 @@ verus! {
         pub exec fn setup(pm_regions: &mut PMRegions, timestamp: Ghost<PmTimestamp>) -> (result: Result<(Vec<u64>, Ghost<PmTimestamp>, u128), MultiLogErr>)
             requires
                 old(pm_regions).inv(),
-                old(pm_regions)@.timestamp_corresponds_to_regions(timestamp@),
+                old(pm_regions)@.device_id() == timestamp@.device_id(),
             ensures
                 pm_regions.inv(),
                 pm_regions@.no_outstanding_writes(),
@@ -270,8 +271,7 @@ verus! {
                         &&& can_only_crash_as_state(pm_regions@, multilog_id, state)
                         &&& UntrustedMultiLogImpl::recover(pm_regions@.committed(), multilog_id) == Some(state)
                         &&& state == state.drop_pending_appends()
-                        &&& regions_correspond(timestamp@, new_timestamp@)
-                        &&& pm_regions@.timestamp_corresponds_to_regions(new_timestamp@)
+                        &&& pm_regions@.device_id() == new_timestamp@.device_id()
                     },
                     Err(MultiLogErr::InsufficientSpaceForSetup { which_log, required_space }) => {
                         let (flushed_regions, new_timestamp) = old(pm_regions)@.flush(timestamp@);
@@ -309,7 +309,7 @@ verus! {
                     let (flushed_regions, new_timestamp) = pm_regions@.flush(timestamp@);
                     UntrustedMultiLogImpl::recover(flushed_regions.committed(), multilog_id).is_Some()
                 }),
-                pm_regions@.timestamp_corresponds_to_regions(timestamp@)
+                pm_regions@.device_id() == timestamp@.device_id()
             ensures
                 match result {
                     Ok((trusted_log_impl, new_timestamp)) => {
@@ -362,7 +362,7 @@ verus! {
                                        -> (result: Result<u128, MultiLogErr>)
             requires
                 old(self).valid(),
-                old(self).corresponds_to_timestamp(timestamp@)
+                old(self).device_id() == timestamp@.device_id(),
             ensures
                 self.valid(),
                 self.constants() == old(self).constants(),
@@ -410,7 +410,7 @@ verus! {
         pub exec fn commit(&mut self, timestamp: Ghost<PmTimestamp>) -> (result: Result<Ghost<PmTimestamp>, MultiLogErr>)
             requires
                 old(self).valid(),
-                old(self).corresponds_to_timestamp(timestamp@)
+                old(self).device_id() == timestamp@.device_id()
             ensures
                 self.valid(),
                 self.constants() == old(self).constants(),
@@ -443,7 +443,7 @@ verus! {
         pub exec fn advance_head(&mut self, which_log: u32, new_head: u128, timestamp: Ghost<PmTimestamp>) -> (result: Result<(), MultiLogErr>)
             requires
                 old(self).valid(),
-                old(self).corresponds_to_timestamp(timestamp@)
+                old(self).device_id() == timestamp@.device_id()
             ensures
                 self.valid(),
                 self.constants() == old(self).constants(),
