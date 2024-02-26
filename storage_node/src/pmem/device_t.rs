@@ -26,7 +26,7 @@ verus! {
         /// It returns a set of `PersistentMemoryRegion`s based on the given sizes and a single ghost timestamp
         /// that can be used with all of the regions.
         /// TODO: the recursive spec function in the precondition makes it hard to satisfy the precondition...
-        exec fn get_regions(self, regions: Vec<u64>) -> (result: Result<(Vec<PMRegion>, Ghost<PmTimestamp>), ()>)
+        exec fn get_regions(self, regions: Vec<u64>) -> (result: Result<Vec<PMRegion>, ()>)
         where
             Self: Sized
         requires
@@ -37,10 +37,10 @@ verus! {
             1 <= regions@.len() < usize::MAX,
         ensures
             match result {
-                Ok((regions_list, timestamp)) => {
+                Ok(regions_list) => {
                     &&& regions@.len() == regions_list@.len()
                     &&& forall |i| #![auto] 0 <= i < regions_list@.len() ==> {
-                        &&& regions_list[i].spec_device_id() == timestamp@.device_id()
+                        // &&& regions_list[i].spec_device_id() == timestamp@.device_id()
                         &&& regions_list[i]@.len() == regions[i]
                         &&& regions_list[i].inv()
                     }

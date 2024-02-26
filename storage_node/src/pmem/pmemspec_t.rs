@@ -191,17 +191,17 @@ verus! {
             }
         }
 
-        // If we are passed a timestamp that is greater than the write timestamp,
-        // then the device has been flushed since the write, and we can update the byte
-        // accordingly
-        pub open spec fn update_byte_with_timestamp(self, timestamp: PmTimestamp) -> Self
-        {
-            if timestamp.gt(self.write_timestamp) {
-                self.flush()
-            } else {
-                self
-            }
-        }
+        // // If we are passed a timestamp that is greater than the write timestamp,
+        // // then the device has been flushed since the write, and we can update the byte
+        // // accordingly
+        // pub open spec fn update_byte_with_timestamp(self, timestamp: PmTimestamp) -> Self
+        // {
+        //     if timestamp.gt(self.write_timestamp) {
+        //         self.flush()
+        //     } else {
+        //         self
+        //     }
+        // }
     }
 
     /// We model the state of a region of persistent memory as a
@@ -211,7 +211,9 @@ verus! {
     #[verifier::ext_equal]
     pub struct PersistentMemoryRegionView
     {
-        pub state: Seq<PersistentMemoryByte>
+        pub state: Seq<PersistentMemoryByte>,
+        pub device_id: u128,
+        pub current_timestamp: PmTimestamp
     }
 
     impl PersistentMemoryRegionView
@@ -221,21 +223,30 @@ verus! {
             self.state.len()
         }
 
-        pub open spec fn write(self, addr: int, bytes: Seq<u8>, timestamp: PmTimestamp) -> Self
+        pub open spec fn write(self, addr: int, bytes: Seq<u8>) -> Self
         {
-            Self { state: self.state.map(|pos: int, pre_byte: PersistentMemoryByte|
-                                         if addr <= pos < addr + bytes.len() { pre_byte.write(bytes[pos - addr], timestamp) }
-                                         else { pre_byte }) }
+            Self {
+                state: self.state.map(|pos: int, pre_byte: PersistentMemoryByte|
+                                         if addr <= pos < addr + bytes.len() { pre_byte.write(bytes[pos - addr], self.current_timestamp) }
+                                         else { pre_byte }),
+                device_id: self.device_id,
+                current_timestamp: self.current_timestamp
+            }
         }
 
         pub open spec fn flush(self) -> Self
         {
-            Self { state: self.state.map(|_addr, b: PersistentMemoryByte| b.flush()) }
+            Self {
+                state: self.state.map(|_addr, b: PersistentMemoryByte| b.flush()),
+                device_id: self.device_id,
+                current_timestamp: self.current_timestamp.inc_timestamp()
+            }
         }
 
-        pub open spec fn update_region_with_timestamp(self, timestamp: PmTimestamp) -> Self
+        pub open spec fn equal_except_for_timestamps(self, rhs: PersistentMemoryRegionView) -> bool
         {
-            Self { state: self.state.map(|pos: int, pre_byte: PersistentMemoryByte| pre_byte.update_byte_with_timestamp(timestamp)) }
+            self.state =~= rhs.state && self.device_id == rhs.device_id
+            // &&& self.device_id == rhs.device_id
         }
 
         pub open spec fn no_outstanding_writes_in_range(self, i: int, j: int) -> bool
@@ -302,7 +313,7 @@ verus! {
     #[verifier::ext_equal]
     pub struct PersistentMemoryRegionsView {
         pub regions: Seq<PersistentMemoryRegionView>,
-        pub fence_timestamp: PmTimestamp,
+        pub current_timestamp: PmTimestamp,
         pub device_id: u128,
     }
 
@@ -317,58 +328,60 @@ verus! {
             self.regions[i]
         }
 
-        pub closed spec fn device_id(&self) -> u128
+        pub open spec fn device_id(&self) -> u128
         {
             self.device_id
         }
 
-        pub open spec fn write(self, index: int, addr: int, bytes: Seq<u8>, timestamp: PmTimestamp) -> Self
+        pub open spec fn equal_except_for_timestamps(self, rhs: PersistentMemoryRegionsView) -> bool
+        {
+            &&& self.device_id == rhs.device_id
+            &&& forall |i: int| #![auto] 0 <= i < self.len() ==> self[i].equal_except_for_timestamps(rhs[i])
+        }
+
+        pub open spec fn write(self, index: int, addr: int, bytes: Seq<u8>) -> Self
         {
             Self {
                 regions: self.regions.map(|pos: int, pre_view: PersistentMemoryRegionView|
                     if pos == index {
-                        pre_view.write(addr, bytes, timestamp)
+                        pre_view.write(addr, bytes)
                     } else {
                         pre_view
                     }
                 ),
-                fence_timestamp: self.fence_timestamp,
+                current_timestamp: self.current_timestamp,
                 device_id: self.device_id
             }
         }
 
 
-        pub open spec fn flush(self, timestamp: PmTimestamp) -> (Self, PmTimestamp)
+        pub open spec fn flush(self) -> Self
         {
-            (
-                Self {
-                    regions: self.regions.map(|_pos, pm: PersistentMemoryRegionView| pm.flush()),
-                    fence_timestamp: timestamp,
-                    device_id: self.device_id,
-                },
-                timestamp.inc_timestamp(),
-
-            )
-        }
-
-        /// Updates any bytes in the PersistentMemoryRegionsView that have a write timestamp
-        /// that is lower than the given timestamp, as the presence of the greater timestamp
-        /// indicates that a global store fence has been invoked since we wrote those bytes.
-        /// If the given timestamp does not correspond to this region view, then the view
-        /// does not change.
-        pub open spec fn update_regions_with_timestamp(self, timestamp: PmTimestamp) -> Self
-        {
-            if self.device_id() == timestamp.device_id() {
-                Self {
-                    regions: self.regions.map(|_pos, pm: PersistentMemoryRegionView| pm.update_region_with_timestamp(timestamp)),
-                    fence_timestamp: timestamp,
-                    device_id: self.device_id
-                }
-            } else {
-                self
+            Self {
+                regions: self.regions.map(|_pos, pm: PersistentMemoryRegionView| pm.flush()),
+                device_id: self.device_id,
+                current_timestamp: self.current_timestamp.inc_timestamp(),
             }
-
         }
+
+        // /// Updates any bytes in the PersistentMemoryRegionsView that have a write timestamp
+        // /// that is lower than the given timestamp, as the presence of the greater timestamp
+        // /// indicates that a global store fence has been invoked since we wrote those bytes.
+        // /// If the given timestamp does not correspond to this region view, then the view
+        // /// does not change.
+        // pub open spec fn update_regions_with_timestamp(self, timestamp: PmTimestamp) -> Self
+        // {
+        //     if self.device_id() == timestamp.device_id() {
+        //         Self {
+        //             regions: self.regions.map(|_pos, pm: PersistentMemoryRegionView| pm.update_region_with_timestamp(timestamp)),
+        //             fence_timestamp: timestamp,
+        //             device_id: self.device_id
+        //         }
+        //     } else {
+        //         self
+        //     }
+
+        // }
 
         pub open spec fn no_outstanding_writes(self) -> bool {
             forall |i: int| #![auto] 0 <= i < self.len() ==> self[i].no_outstanding_writes()
@@ -435,21 +448,22 @@ verus! {
             ensures
                 bytes@ == self@.committed().subrange(addr as int, addr + num_bytes);
 
-        fn write(&mut self, addr: u64, bytes: &[u8], timestamp: Ghost<PmTimestamp>)
+        fn write(&mut self, addr: u64, bytes: &[u8])
             requires
                 old(self).inv(),
                 addr + bytes@.len() <= old(self)@.len(),
                 addr + bytes@.len() <= u64::MAX
             ensures
                 self.inv(),
-                self@ == self@.write(addr as int, bytes@, timestamp@);
+                self@ == self@.write(addr as int, bytes@);
 
         fn flush(&mut self)
             requires
                 old(self).inv()
             ensures
                 self.inv(),
-                self@ == old(self)@.flush();
+                self@ == old(self)@.flush(),
+                self@.device_id == old(self)@.device_id;
 
 
     }
@@ -507,39 +521,40 @@ verus! {
                     }
                 });
 
-        fn write(&mut self, index: usize, addr: u64, bytes: &[u8], timestamp: Ghost<PmTimestamp>)
+        fn write(&mut self, index: usize, addr: u64, bytes: &[u8])
             requires
                 old(self).inv(),
                 index < old(self)@.len(),
                 addr + bytes@.len() <= old(self)@[index as int].len(),
                 // Writes aren't allowed where there are already outstanding writes.
                 old(self)@.no_outstanding_writes_in_range(index as int, addr as int, addr + bytes@.len()),
-                old(self)@.device_id() == timestamp@.device_id()
+                // old(self)@.device_id() == timestamp@.device_id()
             ensures
                 self.inv(),
                 self.constants() == old(self).constants(),
                 ({
-                    let written= old(self)@.write(index as int, addr as int, bytes@, timestamp@);
+                    let written = old(self)@.write(index as int, addr as int, bytes@);
                     &&& self@ == written
-                    &&& self@.device_id() == timestamp@.device_id()
+                    // &&& self@.device_id() == timestamp@.device_id()
                 });
 
 
-        fn flush(&mut self, timestamp: Ghost<PmTimestamp>) -> (new_timestamp: Ghost<PmTimestamp>)
+        fn flush(&mut self)
             requires
                 old(self).inv(),
-                old(self)@.device_id() == timestamp@.device_id()
+                // old(self)@.device_id() == timestamp@.device_id()
             ensures
                 self.inv(),
                 self.constants() == old(self).constants(),
                 ({
-                    let (flushed, new_ts) = old(self)@.flush(timestamp@);
-                    &&& new_timestamp == new_ts
+                    let flushed = old(self)@.flush();
+                    // &&& new_timestamp == new_ts
                     // &&& new_ts > timestamp@
-                    &&& new_timestamp@.gt(timestamp@)
+                    // &&& new_timestamp@.gt(timestamp@)
                     &&& self@ == flushed
-                    &&& self@.fence_timestamp == timestamp
-                    &&& self@.device_id() == new_timestamp@.device_id()
+                    &&& self.spec_device_id() == old(self).spec_device_id()
+                    // &&& self@.fence_timestamp == timestamp
+                    // &&& self@.device_id() == new_timestamp@.device_id()
                 })
             ;
     }
@@ -621,7 +636,7 @@ verus! {
         // can crash and recover into, the permission authorizes that
         // state.
         #[allow(unused_variables)]
-        pub exec fn write(&mut self, index: usize, addr: u64, bytes: &[u8], perm: Tracked<&Perm>, timestamp: Ghost<PmTimestamp>)
+        pub exec fn write(&mut self, index: usize, addr: u64, bytes: &[u8], perm: Tracked<&Perm>)
             requires
                 old(self).inv(),
                 index < old(self)@.len(),
@@ -629,10 +644,10 @@ verus! {
                 addr + bytes@.len() <= u64::MAX,
                 old(self)@.no_outstanding_writes_in_range(index as int, addr as int, addr + bytes@.len()),
                 ({
-                    &&& old(self)@.device_id() == timestamp@.device_id()
+                    // &&& old(self)@.device_id() == timestamp@.device_id()
                     // The key thing the caller must prove is that all crash states are authorized by `perm`
                     &&& forall |s| {
-                            let pm_state = old(self)@.write(index as int, addr as int, bytes@, timestamp@);
+                            let pm_state = old(self)@.write(index as int, addr as int, bytes@);
                             pm_state.can_crash_as(s)
                         } ==> #[trigger] perm@.check_permission(s)
                 }),
@@ -640,12 +655,12 @@ verus! {
                 self.inv(),
                 self.constants() == old(self).constants(),
                 ({
-                    let written = old(self)@.write(index as int, addr as int, bytes@, timestamp@);
+                    let written = old(self)@.write(index as int, addr as int, bytes@);
                     &&& self@ == written
-                    &&& self@.device_id() == timestamp@.device_id()
+                    // &&& self@.device_id() == timestamp@.device_id()
                 })
         {
-            self.pm_regions.write(index, addr, bytes, timestamp)
+            self.pm_regions.write(index, addr, bytes)
         }
 
         // Even though the memory is write-restricted, no restrictions are
@@ -653,22 +668,22 @@ verus! {
         // the possible states the memory can crash into. So if the memory
         // is already restricted to only crash into good states, `flush`
         // automatically maintains that restriction.
-        pub exec fn flush(&mut self, timestamp: Ghost<PmTimestamp>) -> (new_timestamp: Ghost<PmTimestamp>)
+        pub exec fn flush(&mut self)
             requires
                 old(self).inv(),
-                old(self)@.device_id() == timestamp@.device_id()
+                // old(self)@.device_id() == timestamp@.device_id()
             ensures
                 self.inv(),
                 ({
-                    let (flushed, new_ts) = old(self)@.flush(timestamp@);
-                    &&& new_ts == new_timestamp
-                    &&& new_timestamp@.gt(timestamp@)
+                    let flushed = old(self)@.flush();
+                    // &&& new_ts == new_timestamp
+                    // &&& new_timestamp@.gt(timestamp@)
                     &&& self@ == flushed
-                    &&& self@.device_id() == new_timestamp@.device_id()
+                    // &&& self@.device_id() == new_timestamp@.device_id()
                 }),
                 self.constants() == old(self).constants(),
         {
-            self.pm_regions.flush(timestamp)
+            self.pm_regions.flush()
         }
     }
 }

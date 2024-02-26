@@ -60,7 +60,7 @@ verus! {
         /// Returns a vector of `VolatileMemoryMockingPersistentMemoryRegion`s based on the given vector of sizes.
         /// The caller can later combine these into `VolatileMemoryMockingPersistentMemoryRegions` in whatever
         /// configuration they want.
-        fn get_regions(self, regions: Vec<u64>) -> Result<(Vec<VolatileMemoryMockingPersistentMemoryRegion>, Ghost<PmTimestamp>), ()> {
+        fn get_regions(self, regions: Vec<u64>) -> Result<(Vec<VolatileMemoryMockingPersistentMemoryRegion>), ()> {
             let mut pm_regions: Vec<VolatileMemoryMockingPersistentMemoryRegion> = Vec::new();
             let timestamp: Ghost<PmTimestamp> = Ghost(PmTimestamp::new(self.id as int));
 
@@ -80,7 +80,7 @@ verus! {
                 idx += 1;
             }
 
-            Ok((pm_regions, timestamp))
+            Ok(pm_regions)
         }
     }
 
@@ -118,7 +118,7 @@ verus! {
                                                      outstanding_write: None,
                                                      write_timestamp: timestamp@,
                                                  });
-            let persistent_memory_view = Ghost(PersistentMemoryRegionView { state });
+            let persistent_memory_view = Ghost(PersistentMemoryRegionView { state, device_id, current_timestamp: timestamp@ });
             Ok(Self { contents, persistent_memory_view, device_id })
         }
 
@@ -163,11 +163,11 @@ verus! {
         }
 
         #[verifier::external_body]
-        fn write(&mut self, addr: u64, bytes: &[u8], timestamp: Ghost<PmTimestamp>)
+        fn write(&mut self, addr: u64, bytes: &[u8])
         {
             let addr_usize: usize = addr.try_into().unwrap();
             self.contents.splice(addr_usize..addr_usize+bytes.len(), bytes.iter().cloned());
-            self.persistent_memory_view = Ghost(self.persistent_memory_view@.write(addr as int, bytes@, timestamp@))
+            self.persistent_memory_view = Ghost(self.persistent_memory_view@.write(addr as int, bytes@))
         }
 
         fn flush(&mut self)
@@ -186,7 +186,7 @@ verus! {
     pub struct VolatileMemoryMockingPersistentMemoryRegions
     {
         pub pms: Vec<VolatileMemoryMockingPersistentMemoryRegion>,
-        pub fence_timestamp: Ghost<PmTimestamp>,
+        pub current_timestamp: Ghost<PmTimestamp>,
         pub device_id: u128,
     }
 
@@ -199,7 +199,7 @@ verus! {
         {
             PersistentMemoryRegionsView {
                 regions: self.pms@.map(|_idx, pm: VolatileMemoryMockingPersistentMemoryRegion| pm@),
-                fence_timestamp: self.fence_timestamp@,
+                current_timestamp: self.current_timestamp@,
                 device_id: self.device_id
             }
         }
@@ -240,13 +240,13 @@ verus! {
         }
 
         #[verifier::external_body]
-        fn write(&mut self, index: usize, addr: u64, bytes: &[u8], timestamp: Ghost<PmTimestamp>)
+        fn write(&mut self, index: usize, addr: u64, bytes: &[u8])
         {
-            self.pms[index].write(addr, bytes, timestamp)
+            self.pms[index].write(addr, bytes)
         }
 
         #[verifier::external_body]
-        fn flush(&mut self, Ghost(timestamp): Ghost<PmTimestamp>) -> Ghost<PmTimestamp>
+        fn flush(&mut self)
         {
             for which_region in iter: 0..self.pms.len()
                 invariant
@@ -256,7 +256,8 @@ verus! {
             {
                 self.pms[which_region].flush();
             }
-            Ghost(timestamp.inc_timestamp())
+            // Ghost(timestamp.inc_timestamp())
+            self.current_timestamp = Ghost(self.current_timestamp@.inc_timestamp());
         }
     }
 
@@ -278,7 +279,7 @@ verus! {
             let device_id = regions[0].device_id();
             Self {
                 pms: regions,
-                fence_timestamp: timestamp,
+                current_timestamp: timestamp,
                 device_id
             }
         }
