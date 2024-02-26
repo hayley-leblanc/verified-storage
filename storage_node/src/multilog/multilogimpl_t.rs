@@ -269,6 +269,9 @@ verus! {
                                #[trigger] pm_regions@[i].len() == old(pm_regions)@[i].len()
                         &&& can_only_crash_as_state(pm_regions@, multilog_id, state)
                         &&& UntrustedMultiLogImpl::recover(pm_regions@.committed(), multilog_id) == Some(state)
+                        // Required by the `start` function's precondition. Putting this in the
+                        // postcond of `setup` ensures that the trusted caller doesn't have to prove it
+                        &&& UntrustedMultiLogImpl::recover(pm_regions@.flush().committed(), multilog_id) == Some(state)
                         &&& state == state.drop_pending_appends()
                         // &&& pm_regions@.device_id() == new_timestamp@.device_id()
                     },

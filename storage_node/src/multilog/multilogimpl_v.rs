@@ -108,6 +108,20 @@ verus! {
             self.state@
         }
 
+        // This lemma establishes that if two `PersistentMemoryRegionsView`s are identical except
+        // for timestamp, then the recovery view of their committed bytes are the same. This is
+        // somewhat obvious -- the timestamp is not used at all in `recover`. Note that if
+        // the timestamp is used to update the ghost state associated with a PM region, then
+        // its recovery view may change, because its committed bytes have changed.
+        pub proof fn lemma_recovery_view_does_not_depend_on_timestamp()
+            ensures
+                forall |r1: PersistentMemoryRegionsView, r2, id| #![auto] r1.equal_except_for_timestamps(r2) ==> {
+                    Self::recover(r1.committed(), id) == Self::recover(r2.committed(), id)
+                }
+        {
+            assert (forall |r1: PersistentMemoryRegionsView, r2| r1.equal_except_for_timestamps(r2) ==> r1.committed() == r2.committed());
+        }
+
         // The `setup` method sets up persistent memory objects `pm_regions`
         // to store an initial empty multilog. It returns a vector
         // listing the capacities of the logs. See `main.rs` for more
@@ -126,7 +140,7 @@ verus! {
                 pm_regions.constants() == old(pm_regions).constants(),
                 pm_regions@.no_outstanding_writes(),
                 match result {
-                    Ok(log_capacities,) => {
+                    Ok(log_capacities) => {
                         let state = AbstractMultiLogState::initialize(log_capacities@);
                         &&& pm_regions@.len() == old(pm_regions)@.len()
                         &&& pm_regions@.len() >= 1
@@ -137,6 +151,7 @@ verus! {
                                #[trigger] pm_regions@[i].len() == old(pm_regions)@[i].len()
                         &&& can_only_crash_as_state(pm_regions@, multilog_id, state)
                         &&& Self::recover(pm_regions@.committed(), multilog_id) == Some(state)
+                        &&& Self::recover(pm_regions@.flush().committed(), multilog_id) == Some(state)
                         &&& state == state.drop_pending_appends()
                         // &&& pm_regions@.device_id() == new_timestamp@.device_id()
                     },
@@ -216,6 +231,8 @@ verus! {
                 lemma_if_no_outstanding_writes_then_flush_is_idempotent(pm_regions@);
                 lemma_if_no_outstanding_writes_then_persistent_memory_regions_view_can_only_crash_as_committed(
                     pm_regions@);
+
+                Self::lemma_recovery_view_does_not_depend_on_timestamp();
             }
 
             Ok(log_capacities)

@@ -246,7 +246,6 @@ verus! {
         pub open spec fn equal_except_for_timestamps(self, rhs: PersistentMemoryRegionView) -> bool
         {
             self.state =~= rhs.state && self.device_id == rhs.device_id
-            // &&& self.device_id == rhs.device_id
         }
 
         pub open spec fn no_outstanding_writes_in_range(self, i: int, j: int) -> bool
@@ -336,7 +335,13 @@ verus! {
         pub open spec fn equal_except_for_timestamps(self, rhs: PersistentMemoryRegionsView) -> bool
         {
             &&& self.device_id == rhs.device_id
+            &&& self.len() == rhs.len()
             &&& forall |i: int| #![auto] 0 <= i < self.len() ==> self[i].equal_except_for_timestamps(rhs[i])
+        }
+
+        pub open spec fn all_timestamps_match(self) -> bool
+        {
+            forall |i: int| #![auto] 0 <= i < self.len() ==> self.regions[i].current_timestamp == self.current_timestamp
         }
 
         pub open spec fn write(self, index: int, addr: int, bytes: Seq<u8>) -> Self
@@ -463,7 +468,8 @@ verus! {
             ensures
                 self.inv(),
                 self@ == old(self)@.flush(),
-                self@.device_id == old(self)@.device_id;
+                self@.device_id == old(self)@.device_id,
+                self@.current_timestamp.gt(old(self)@.current_timestamp);
 
 
     }
@@ -552,7 +558,9 @@ verus! {
                     // &&& new_ts > timestamp@
                     // &&& new_timestamp@.gt(timestamp@)
                     &&& self@ == flushed
-                    &&& self.spec_device_id() == old(self).spec_device_id()
+                    &&& self@.device_id == old(self)@.device_id
+                    &&& self@.current_timestamp.gt(old(self)@.current_timestamp)
+                    &&& self@.all_timestamps_match() // TODO: maybe invariant?
                     // &&& self@.fence_timestamp == timestamp
                     // &&& self@.device_id() == new_timestamp@.device_id()
                 })

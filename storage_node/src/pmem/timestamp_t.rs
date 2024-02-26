@@ -46,6 +46,13 @@ verus! {
             forall |t1: PmTimestamp, t2, t3| t1.gt(t2) && t2.gt(t3) ==> t1.gt(t3)
     {}
 
+    pub proof fn lemma_timestamp_inc_gt(ts1: PmTimestamp, ts2: PmTimestamp)
+        requires
+            ts1 == ts2.inc_timestamp(),
+        ensures
+            ts1.gt(ts2)
+    {}
+
     // // this does not seem to be doing what you would like it to
     // impl SpecOrd for PmTimestamp {
     //     fn spec_lt(self, rhs: PmTimestamp) -> bool {

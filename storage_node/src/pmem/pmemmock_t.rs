@@ -73,7 +73,8 @@ verus! {
                     pm_regions@.len() == idx,
                     forall |j| #![auto] 0 <= j < idx ==> pm_regions[j].spec_device_id() == timestamp@.device_id(),
                     forall |j| #![auto] 0 <= j < idx ==> pm_regions[j]@.len() == regions[j]@,
-                    forall |j| #![auto] 0 <= j < idx ==> pm_regions[j].inv()
+                    forall |j| #![auto] 0 <= j < idx ==> pm_regions[j].inv(),
+                    forall |j| #![auto] 0 <= j < idx ==> pm_regions[j]@.current_timestamp == timestamp@
             {
                 let mock_regions = VolatileMemoryMockingPersistentMemoryRegion::new(regions[idx], self.id, timestamp)?;
                 pm_regions.push(mock_regions);
@@ -106,6 +107,7 @@ verus! {
                         &&& pm@.len() == region_size
                         &&& pm.inv()
                         &&& pm@.no_outstanding_writes()
+                        &&& pm@.current_timestamp == timestamp@
                     },
                     Err(_) => true
                 }
@@ -175,8 +177,11 @@ verus! {
             // Because of our invariant, we don't have to do anything
             // to the actual contents. We just have to update the
             // abstract view to reflect the flush having happened.
-
+            let old_pm_view = self.persistent_memory_view;
             self.persistent_memory_view = Ghost(self.persistent_memory_view@.flush());
+            proof {
+                lemma_timestamp_inc_gt(self.persistent_memory_view@.current_timestamp, old_pm_view@.current_timestamp);
+            }
             assert (self.contents@ =~= self.persistent_memory_view@.flush().committed());
         }
     }
@@ -186,7 +191,6 @@ verus! {
     pub struct VolatileMemoryMockingPersistentMemoryRegions
     {
         pub pms: Vec<VolatileMemoryMockingPersistentMemoryRegion>,
-        pub current_timestamp: Ghost<PmTimestamp>,
         pub device_id: u128,
     }
 
@@ -194,12 +198,14 @@ verus! {
     /// used to mock a collection of persistent memory regions, it
     /// implements the trait `PersistentMemoryRegions`.
 
+    // TODO: should maintain as an invariant that the view's current timestamp
+    // matches the current timestamps of all of the regions in it
     impl PersistentMemoryRegions for VolatileMemoryMockingPersistentMemoryRegions {
         closed spec fn view(&self) -> PersistentMemoryRegionsView
         {
             PersistentMemoryRegionsView {
                 regions: self.pms@.map(|_idx, pm: VolatileMemoryMockingPersistentMemoryRegion| pm@),
-                current_timestamp: self.current_timestamp@,
+                current_timestamp: self.pms[0]@.current_timestamp,
                 device_id: self.device_id
             }
         }
@@ -257,29 +263,32 @@ verus! {
                 self.pms[which_region].flush();
             }
             // Ghost(timestamp.inc_timestamp())
-            self.current_timestamp = Ghost(self.current_timestamp@.inc_timestamp());
+            // self.current_timestamp = Ghost(self.current_timestamp@.inc_timestamp());
+            // we need to update the ghost state of all regions
         }
     }
 
     impl VolatileMemoryMockingPersistentMemoryRegions {
         // TODO: ideally this would be a trait method of PersistentMemoryRegions, but the generics don't work out very well.
-        fn combine_regions(regions: Vec<VolatileMemoryMockingPersistentMemoryRegion>, timestamp: Ghost<PmTimestamp>) -> (result: Self)
+        pub fn combine_regions(regions: Vec<VolatileMemoryMockingPersistentMemoryRegion>) -> (result: Self)
             requires
                 regions@.len() > 0,
                 forall |i| 0 <= i < regions@.len() ==> {
                     let region = #[trigger] regions[i];
                     &&& region.inv()
-                    &&& region.spec_device_id() == timestamp@.device_id()
-                }
+                    &&& region@.current_timestamp == regions[0]@.current_timestamp
+                },
             ensures
                 result@.len() == regions@.len(),
                 result.inv(),
-                result.spec_device_id() == timestamp@.device_id()
+                forall |i: int| 0 <= i < result@.len() ==> {
+                    let region = #[trigger] result@[i];
+                    &&& region.current_timestamp == result@[0].current_timestamp
+                }
         {
             let device_id = regions[0].device_id();
             Self {
                 pms: regions,
-                current_timestamp: timestamp,
                 device_id
             }
         }
