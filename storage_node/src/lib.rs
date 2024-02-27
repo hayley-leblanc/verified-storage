@@ -142,8 +142,6 @@ verus! {
             _=> return false
         }
 
-        assert(old1.get_timestamp() == multilog1.get_timestamp());
-
         let result1 = multilog2.tentatively_append(0, vec.as_slice());
         let result2 = multilog2.tentatively_append(1, vec.as_slice());
         match (result1, result2) {
@@ -160,6 +158,7 @@ verus! {
         // I should be allowed to (as in, verification will succeed) try to update
         // multilog1's timestamp using multilog2's.
         multilog1.update_timestamp(Ghost(multilog2.get_timestamp()));
+
 
         true
     }

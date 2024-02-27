@@ -220,11 +220,9 @@ verus! {
         }
 
         fn update_timestamp(&mut self, new_timestamp: Ghost<PmTimestamp>) {
-            // TODO: need to prove that these assertions hold (if they actually do hold...)
-            assert(self.valid() ==> self.wrpm_regions.inv());
-            self.wrpm_regions.update_timestamps(new_timestamp);
-            assert(self.untrusted_log_impl.inv(&self.wrpm_regions, self.multilog_id@));
-            assert(can_only_crash_as_state(self.wrpm_regions@, self.multilog_id@, self@.drop_pending_appends()));
+            proof { self.lemma_valid_implies_wrpm_inv(); }
+            self.untrusted_log_impl.update_timestamps(&mut self.wrpm_regions, self.multilog_id, new_timestamp);
+            proof { self.lemma_untrusted_log_inv_implies_valid(); }
         }
     }
 
@@ -264,6 +262,24 @@ verus! {
         pub closed spec fn valid(self) -> bool {
             &&& self.untrusted_log_impl.inv(&self.wrpm_regions, self.multilog_id@)
             &&& can_only_crash_as_state(self.wrpm_regions@, self.multilog_id@, self@.drop_pending_appends())
+        }
+
+        proof fn lemma_valid_implies_wrpm_inv(self)
+            requires
+                self.valid()
+            ensures
+                self.wrpm_regions.inv()
+        {
+            self.untrusted_log_impl.lemma_inv_implies_wrpm_inv(&self.wrpm_regions, self.multilog_id@);
+        }
+
+        proof fn lemma_untrusted_log_inv_implies_valid(self)
+            requires
+                self.untrusted_log_impl.inv(&self.wrpm_regions, self.multilog_id@)
+            ensures
+                self.valid()
+        {
+            self.untrusted_log_impl.lemma_inv_implies_can_only_crash_as(&self.wrpm_regions, self.multilog_id@);
         }
 
         // The `setup` method sets up persistent memory regions `pm_regions`

@@ -523,7 +523,9 @@ verus! {
                 new_timestamp@.device_id() == old(self)@.current_timestamp.device_id()
             ensures
                 self.inv(),
-                self@.current_timestamp == new_timestamp;
+                self@.current_timestamp == new_timestamp,
+                self@.equal_except_for_timestamps(old(self)@),
+                forall |s| old(self)@.can_crash_as(s) <==> self@.can_crash_as(s);
 
         fn get_num_regions(&self) -> (result: usize)
             requires
@@ -728,9 +730,11 @@ verus! {
                 new_timestamp@.device_id() == old(self)@.current_timestamp.device_id()
             ensures
                 self.inv(),
-                self@.current_timestamp == new_timestamp@
+                self@.current_timestamp == new_timestamp@,
+                self@.equal_except_for_timestamps(old(self)@),
+                forall |s| old(self)@.can_crash_as(s) <==> self@.can_crash_as(s)
         {
-            self.pm_regions.update_timestamps(new_timestamp)
+            self.pm_regions.update_timestamps(new_timestamp);
         }
     }
 }

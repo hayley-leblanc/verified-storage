@@ -101,6 +101,34 @@ verus! {
             &&& can_only_crash_as_state(wrpm_regions@, multilog_id, self.state@.drop_pending_appends())
         }
 
+        pub proof fn lemma_inv_implies_wrpm_inv<Perm, PMRegions>(
+            &self,
+            wrpm_regions: &WriteRestrictedPersistentMemoryRegions<Perm, PMRegions>,
+            multilog_id: u128
+        )
+            where
+                Perm: CheckPermission<Seq<Seq<u8>>>,
+                PMRegions: PersistentMemoryRegions
+            requires
+                self.inv(wrpm_regions, multilog_id)
+            ensures
+                wrpm_regions.inv()
+        {}
+
+        pub proof fn lemma_inv_implies_can_only_crash_as<Perm, PMRegions>(
+            &self,
+            wrpm_regions: &WriteRestrictedPersistentMemoryRegions<Perm, PMRegions>,
+            multilog_id: u128
+        )
+            where
+                Perm: CheckPermission<Seq<Seq<u8>>>,
+                PMRegions: PersistentMemoryRegions
+            requires
+                self.inv(wrpm_regions, multilog_id)
+            ensures
+            can_only_crash_as_state(wrpm_regions@, multilog_id, self@.drop_pending_appends())
+        {}
+
         // This function specifies how to view the in-memory state of
         // `self` as an abstract multilog state.
         pub closed spec fn view(&self) -> AbstractMultiLogState
@@ -1454,6 +1482,31 @@ verus! {
             let info = &self.infos[which_log as usize];
             Ok((info.head, info.head + info.log_length as u128, info.log_area_len))
         }
+
+        // We have to go through UntrustedMultiLogImpl to update timestamps, even though
+        // the timestamps are not stored/referred to/owned by the untrusted impl, because
+        // we still need to make sure the invariants for this module hold when we update
+        // the timestamps.
+        pub fn update_timestamps<Perm, PMRegions>(
+            &self,
+            wrpm_regions: &mut WriteRestrictedPersistentMemoryRegions<Perm, PMRegions>,
+            Ghost(multilog_id): Ghost<u128>,
+            new_timestamp: Ghost<PmTimestamp>
+        )
+            where
+                Perm: CheckPermission<Seq<Seq<u8>>>,
+                PMRegions: PersistentMemoryRegions
+            requires
+                self.inv(&*old(wrpm_regions), multilog_id),
+                new_timestamp@.gt(old(wrpm_regions)@.current_timestamp),
+                new_timestamp@.device_id() == old(wrpm_regions)@.current_timestamp.device_id()
+            ensures
+                self.inv(wrpm_regions, multilog_id),
+                wrpm_regions@.current_timestamp == new_timestamp@
+        {
+            wrpm_regions.update_timestamps(new_timestamp);
+        }
+
     }
 
 }
