@@ -790,7 +790,6 @@ verus! {
             // Next, flush all outstanding writes to memory. This is
             // necessary so that those writes are ordered before the update
             // to the CDB.
-            // TODO: update and return the new timestamp
             wrpm_regions.flush();
 
             // Next, compute the new encoded CDB to write.
