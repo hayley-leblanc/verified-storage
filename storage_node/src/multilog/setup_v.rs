@@ -516,7 +516,6 @@ verus! {
         // setting up the metadata for region `which_log`.
 
         let ghost old_pm_regions = pm_regions@;
-
         let num_logs = region_sizes.len() as u32;
         for which_log in 0..num_logs
             invariant

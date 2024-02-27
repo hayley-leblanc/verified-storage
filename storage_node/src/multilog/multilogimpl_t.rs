@@ -349,7 +349,6 @@ verus! {
                     let flushed_regions = pm_regions@.flush();
                     UntrustedMultiLogImpl::recover(flushed_regions.committed(), multilog_id).is_Some()
                 }),
-                // pm_regions@.device_id() == timestamp@.device_id()
             ensures
                 match result {
                     Ok(trusted_log_impl) => {
@@ -479,7 +478,6 @@ verus! {
         pub exec fn advance_head(&mut self, which_log: u32, new_head: u128) -> (result: Result<(), MultiLogErr>)
             requires
                 old(self).valid(),
-                // old(self).device_id() == timestamp@.device_id()
             ensures
                 self.valid(),
                 self.constants() == old(self).constants(),

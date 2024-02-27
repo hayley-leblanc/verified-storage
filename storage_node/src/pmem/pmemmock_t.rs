@@ -287,9 +287,6 @@ verus! {
             {
                 self.pms[which_region].flush();
             }
-            // Ghost(timestamp.inc_timestamp())
-            // self.current_timestamp = Ghost(self.current_timestamp@.inc_timestamp());
-            // we need to update the ghost state of all regions
         }
     }
 
@@ -325,54 +322,4 @@ verus! {
             }
         }
     }
-
-    // impl VolatileMemoryMockingPersistentMemoryRegion {
-    //     #[verifier::external_body]
-    //     pub fn new_mock_only_for_use_in_testing(region_size: u64, device_id: u128, timestamp: Ghost<PmTimestamp>) -> (result: Result<Self, ()>)
-    //         requires
-    //             device_id == timestamp@.device_id(),
-    //         ensures
-    //             match result {
-    //                 Ok(pm_region) => {
-    //                     &&& pm_region.inv()
-    //                     &&& pm_region@.no_outstanding_writes()
-    //                     &&& pm_region@.len() == region_size
-    //                     &&& pm_region.device_id() == device_id
-    //                 }
-    //             }
-    //     {
-
-    //     }
-    // }
-
-    // /// We also implement a constructor for
-    // /// `VolatileMemoryMockingPersistentMemoryRegions` so it can be
-    // /// created by test code. We name this constructor
-    // /// `new_mock_only_for_use_in_testing` to make clear that it
-    // /// shouldn't be used in production.
-
-    // impl VolatileMemoryMockingPersistentMemoryRegions {
-    //     #[verifier::external_body]
-    //     pub fn new_mock_only_for_use_in_testing(region_sizes: &[u64], timestamp: Ghost<PmTimestamp>) -> (result: Result<Self, ()>)
-    //         ensures
-    //             match result {
-    //                 Ok(pm_regions) => {
-    //                     &&& pm_regions.inv()
-    //                     &&& pm_regions@.no_outstanding_writes()
-    //                     &&& pm_regions@.len() == region_sizes@.len()
-    //                     &&& forall |i| 0 <= i < region_sizes@.len() ==> #[trigger] pm_regions@[i].len() == region_sizes@[i]
-    //                     &&& pm_regions@.timestamp_corresponds_to_regions(timestamp@)
-    //                 },
-    //                 Err(_) => true
-    //             }
-    //     {
-    //         let mut pms = Vec::<VolatileMemoryMockingPersistentMemoryRegion>::new();
-    //         for &region_size in region_sizes {
-    //             let pm = VolatileMemoryMockingPersistentMemoryRegion::new(region_size, timestamp)?;
-    //             pms.push(pm);
-    //         }
-    //         Ok(Self {pms, fence_timestamp: timestamp})
-    //     }
-    // }
-
 }

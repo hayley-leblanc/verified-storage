@@ -40,7 +40,7 @@ verus! {
                 Ok(regions_list) => {
                     &&& regions@.len() == regions_list@.len()
                     // TODO: why does verification only go through if these are split up
-                    // into separate forall statements
+                    // into separate forall statements?
                     &&& forall |i| #![auto] 0 <= i < regions_list@.len() ==> {
                         &&& regions_list[i]@.len() == regions[i]
                     }

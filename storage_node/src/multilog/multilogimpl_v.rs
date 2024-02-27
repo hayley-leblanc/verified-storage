@@ -283,7 +283,6 @@ verus! {
         // persistent memory regions `wrpm_regions`. This restricts
         // how we can write `wrpm_regions`. This is moot, though,
         // because we don't ever write to the memory.
-        // TODO: update timestamp?
         pub exec fn start<PMRegions>(
             wrpm_regions: &mut WriteRestrictedPersistentMemoryRegions<TrustedPermission, PMRegions>,
             multilog_id: u128,
@@ -392,7 +391,6 @@ verus! {
                 old(self).inv(&*old(wrpm_regions), multilog_id),
                 forall |s| #[trigger] perm.check_permission(s) <==>
                     Self::recover(s, multilog_id) == Some(old(self)@.drop_pending_appends()),
-                // old(wrpm_regions)@.device_id() == timestamp@.device_id()
             ensures
                 self.inv(wrpm_regions, multilog_id),
                 wrpm_regions.constants() == old(wrpm_regions).constants(),

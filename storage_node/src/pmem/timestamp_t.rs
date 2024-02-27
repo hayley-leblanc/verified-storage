@@ -11,18 +11,6 @@ verus! {
         device_id: int
     }
 
-    // impl SpecAdd<int> for PmTimestamp {
-    //     type Output = PmTimestamp;
-
-    //     fn spec_add(self, rhs: int) -> Self::Output
-    //     {
-    //         PmTimestamp {
-    //             value: self.value + rhs,
-    //             device_id: self.device_id
-    //         }
-    //     }
-    // }
-
     impl PmTimestamp {
         pub closed spec fn new(device_id: int) -> Self
         {
@@ -76,8 +64,6 @@ verus! {
         type RegionsView;
 
         spec fn get_timestamp(&self) -> PmTimestamp;
-
-        // spec fn update_region_timestamps(self, new_timestamp: PmTimestamp) -> Self::RegionsView;
 
         // this function should invoke the `inv` function for internal PM regions
         spec fn inv(self) -> bool;
