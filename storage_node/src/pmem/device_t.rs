@@ -51,6 +51,10 @@ verus! {
                         let region = #[trigger] regions_list[i];
                         &&& region@.current_timestamp == regions_list[0]@.current_timestamp
                     }
+                    &&& forall |i| 0 <= i < regions_list@.len() ==> {
+                        let region = #[trigger] regions_list[i];
+                        &&& region.spec_device_id() == regions_list[0].spec_device_id()
+                    }
                 }
                 Err(_) => true // TODO
             };

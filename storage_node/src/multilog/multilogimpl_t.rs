@@ -158,6 +158,7 @@ verus! {
     // This enumeration represents the various errors that can be
     // returned from multilog operations. They're self-explanatory.
     #[is_variant]
+    #[derive(Debug)]
     pub enum MultiLogErr {
         CantSetupWithFewerThanOneRegion { },
         CantSetupWithMoreThanU32MaxRegions { },
@@ -206,6 +207,27 @@ verus! {
         wrpm_regions: WriteRestrictedPersistentMemoryRegions<TrustedPermission, PMRegions>
     }
 
+    impl<PMRegions: PersistentMemoryRegions> TimestampedModule for MultiLogImpl<PMRegions> {
+        type RegionsView = PersistentMemoryRegionsView;
+
+        closed spec fn get_timestamp(&self) -> PmTimestamp
+        {
+            self.wrpm_regions@.current_timestamp
+        }
+
+        open spec fn inv(self) -> bool {
+            self.valid()
+        }
+
+        fn update_timestamp(&mut self, new_timestamp: Ghost<PmTimestamp>) {
+            // TODO: need to prove that these assertions hold (if they actually do hold...)
+            assert(self.valid() ==> self.wrpm_regions.inv());
+            self.wrpm_regions.update_timestamps(new_timestamp);
+            assert(self.untrusted_log_impl.inv(&self.wrpm_regions, self.multilog_id@));
+            assert(can_only_crash_as_state(self.wrpm_regions@, self.multilog_id@, self@.drop_pending_appends()));
+        }
+    }
+
     impl <PMRegions: PersistentMemoryRegions> MultiLogImpl<PMRegions> {
         // The view of a `MultiLogImpl` is whatever the
         // `UntrustedMultiLogImpl` it wraps says it is.
@@ -252,7 +274,6 @@ verus! {
         pub exec fn setup(pm_regions: &mut PMRegions) -> (result: Result<(Vec<u64>, u128), MultiLogErr>)
             requires
                 old(pm_regions).inv(),
-                // old(pm_regions)@.device_id() == timestamp@.device_id(),
             ensures
                 pm_regions.inv(),
                 pm_regions@.no_outstanding_writes(),
@@ -273,7 +294,8 @@ verus! {
                         // postcond of `setup` ensures that the trusted caller doesn't have to prove it
                         &&& UntrustedMultiLogImpl::recover(pm_regions@.flush().committed(), multilog_id) == Some(state)
                         &&& state == state.drop_pending_appends()
-                        // &&& pm_regions@.device_id() == new_timestamp@.device_id()
+                        &&& pm_regions@.current_timestamp.value() == old(pm_regions)@.current_timestamp.value() + 2
+                        &&& pm_regions@.current_timestamp.device_id() == old(pm_regions)@.current_timestamp.device_id()
                     },
                     Err(MultiLogErr::InsufficientSpaceForSetup { which_log, required_space }) => {
                         let flushed_regions = old(pm_regions)@.flush();
@@ -322,6 +344,8 @@ verus! {
                             Some(trusted_log_impl@) == UntrustedMultiLogImpl::recover(flushed_regions.committed(),
                                                                                     multilog_id)
                             })
+                        &&& trusted_log_impl.get_timestamp().value() == pm_regions@.current_timestamp.value() + 1
+                        &&& trusted_log_impl.get_timestamp().device_id() == pm_regions@.current_timestamp.device_id()
                     },
                     Err(MultiLogErr::CRCMismatch) => !pm_regions.constants().impervious_to_corruption,
                     _ => false
@@ -358,7 +382,6 @@ verus! {
                                        -> (result: Result<u128, MultiLogErr>)
             requires
                 old(self).valid(),
-                // old(self).device_id() == timestamp@.device_id(),
             ensures
                 self.valid(),
                 self.constants() == old(self).constants(),
@@ -368,6 +391,7 @@ verus! {
                         &&& which_log < old(self)@.num_logs()
                         &&& offset == state.head + state.log.len() + state.pending.len()
                         &&& self@ == old(self)@.tentatively_append(which_log as int, bytes_to_append@)
+                        &&& self.get_timestamp() == old(self).get_timestamp()
                     },
                     Err(MultiLogErr::InvalidLogIndex { }) => {
                         &&& which_log >= self@.num_logs()
@@ -406,14 +430,14 @@ verus! {
         pub exec fn commit(&mut self) -> (result: Result<(), MultiLogErr>)
             requires
                 old(self).valid(),
-                // old(self).device_id() == timestamp@.device_id()
             ensures
                 self.valid(),
                 self.constants() == old(self).constants(),
                 match result {
                     Ok(()) => {
                         &&& self@ == old(self)@.commit()
-                        // &&& new_timestamp@.gt(timestamp@)
+                        &&& self.get_timestamp().value() == old(self).get_timestamp().value() + 2
+                        &&& self.get_timestamp().device_id() == old(self).get_timestamp().device_id()
                     }
                     _ => false
                 }

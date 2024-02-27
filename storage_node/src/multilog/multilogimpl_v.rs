@@ -134,7 +134,6 @@ verus! {
                 PMRegions: PersistentMemoryRegions
             requires
                 old(pm_regions).inv(),
-                // old(pm_regions)@.device_id() == timestamp.device_id()
             ensures
                 pm_regions.inv(),
                 pm_regions.constants() == old(pm_regions).constants(),
@@ -153,7 +152,8 @@ verus! {
                         &&& Self::recover(pm_regions@.committed(), multilog_id) == Some(state)
                         &&& Self::recover(pm_regions@.flush().committed(), multilog_id) == Some(state)
                         &&& state == state.drop_pending_appends()
-                        // &&& pm_regions@.device_id() == new_timestamp@.device_id()
+                        &&& pm_regions@.current_timestamp.value() == old(pm_regions)@.current_timestamp.value() + 2
+                        &&& pm_regions@.current_timestamp.device_id() == old(pm_regions)@.current_timestamp.device_id()
                     },
                     Err(MultiLogErr::InsufficientSpaceForSetup { which_log, required_space }) => {
                         let flushed_regions = old(pm_regions)@.flush();
@@ -173,6 +173,11 @@ verus! {
                     _ => false
                 }
         {
+            proof {
+                lemma_auto_timestamp_helpers();
+            }
+            let ghost original_pm_regions = pm_regions@;
+
             // We can't write without proving that there are no
             // outstanding writes where we're writing. So just start
             // out by flushing, so it's clear we can write anywhere.
@@ -233,6 +238,7 @@ verus! {
                     pm_regions@);
 
                 Self::lemma_recovery_view_does_not_depend_on_timestamp();
+                assert(pm_regions@.current_timestamp.device_id() == original_pm_regions.current_timestamp.device_id());
             }
 
             Ok(log_capacities)
@@ -265,7 +271,6 @@ verus! {
                 }),
                 old(wrpm_regions).inv(),
                 forall |s| #[trigger] perm.check_permission(s) <==> Self::recover(s, multilog_id) == Some(state),
-                // old(wrpm_regions)@.device_id() == timestamp@.device_id()
             ensures
                 wrpm_regions.inv(),
                 wrpm_regions.constants() == old(wrpm_regions).constants(),
@@ -274,6 +279,8 @@ verus! {
                         &&& log_impl.inv(wrpm_regions, multilog_id)
                         &&& log_impl@ == state
                         &&& can_only_crash_as_state(wrpm_regions@, multilog_id, state.drop_pending_appends())
+                        &&& wrpm_regions@.current_timestamp.value() == old(wrpm_regions)@.current_timestamp.value() + 1
+                        &&& wrpm_regions@.current_timestamp.device_id() == old(wrpm_regions)@.current_timestamp.device_id()
                     },
                     Err(MultiLogErr::CRCMismatch) => !wrpm_regions.constants().impervious_to_corruption,
                     _ => false
@@ -368,6 +375,7 @@ verus! {
                         &&& which_log < old(self)@.num_logs()
                         &&& offset == state.head + state.log.len() + state.pending.len()
                         &&& self@ == old(self)@.tentatively_append(which_log as int, bytes_to_append@)
+                        &&& wrpm_regions@.current_timestamp == old(wrpm_regions)@.current_timestamp
                     },
                     Err(MultiLogErr::InvalidLogIndex { }) => {
                         &&& self@ == old(self)@
@@ -606,17 +614,15 @@ verus! {
                           ||| Self::recover(s, multilog_id) == Some(prev_state.drop_pending_appends())
                           ||| Self::recover(s, multilog_id) == Some(old(self).state@.drop_pending_appends())
                       } ==> #[trigger] perm.check_permission(s),
-                // old(wrpm_regions)@.device_id() == timestamp@.device_id()
             ensures
                 self.inv(wrpm_regions, multilog_id),
                 wrpm_regions.constants() == old(wrpm_regions).constants(),
                 self.state == old(self).state,
-                // old(wrpm_regions)@.device_id() == timestamp@.device_id(),
-                // new_timestamp@.gt(timestamp@)
+                wrpm_regions@.current_timestamp.value() == old(wrpm_regions)@.current_timestamp.value() + 2,
+                wrpm_regions@.current_timestamp.device_id() == old(wrpm_regions)@.current_timestamp.device_id(),
         {
-            // let original_timestamp = timestamp;
             proof {
-                lemma_auto_timestamp_gt_transitive();
+                lemma_auto_timestamp_helpers();
             }
 
             // Set the `unused_metadata_pos` to be the position corresponding to !self.cdb
@@ -626,6 +632,8 @@ verus! {
                                       else { ABSOLUTE_POS_OF_LEVEL3_METADATA_FOR_CDB_TRUE };
             assert(unused_metadata_pos == get_level3_metadata_pos(!self.cdb));
             assert(is_valid_log_index(0, self.num_logs));
+
+            let ghost old_timestamp = wrpm_regions@.current_timestamp;
 
             // Loop, each time performing the update of the inactive level-3
             // metadata for log number `current_log`.
@@ -675,7 +683,11 @@ verus! {
                         metadata_consistent_with_info(flushed[w], multilog_id, self.num_logs, which_log,
                                                         !self.cdb, self.infos@[w])
                     },
-                    // wrpm_regions@.device_id() == timestamp@.device_id()
+
+                    // The loop does not include any flushes, so the timestamp remains unchanged
+                    // throughout the entire loop.
+
+                    wrpm_regions@.current_timestamp == old_timestamp,
             {
                 assert(is_valid_log_index(current_log, self.num_logs));
                 let ghost cur = current_log as int;
@@ -868,7 +880,8 @@ verus! {
                     Ok(()) =>
                     {
                         &&& self@ == old(self)@.commit()
-                        // &&& new_timestamp@.gt(timestamp@)
+                        &&& wrpm_regions@.current_timestamp.value() == old(wrpm_regions)@.current_timestamp.value() + 2
+                        &&& wrpm_regions@.current_timestamp.device_id() == old(wrpm_regions)@.current_timestamp.device_id()
                     }
                     _ => false
                 }

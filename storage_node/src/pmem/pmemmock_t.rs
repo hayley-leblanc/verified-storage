@@ -74,7 +74,8 @@ verus! {
                     forall |j| #![auto] 0 <= j < idx ==> pm_regions[j].spec_device_id() == timestamp@.device_id(),
                     forall |j| #![auto] 0 <= j < idx ==> pm_regions[j]@.len() == regions[j]@,
                     forall |j| #![auto] 0 <= j < idx ==> pm_regions[j].inv(),
-                    forall |j| #![auto] 0 <= j < idx ==> pm_regions[j]@.current_timestamp == timestamp@
+                    forall |j| #![auto] 0 <= j < idx ==> pm_regions[j]@.current_timestamp == timestamp@,
+                    forall |j| #![auto] 0 <= j < idx ==> pm_regions[j]@.device_id == self.id,
             {
                 let mock_regions = VolatileMemoryMockingPersistentMemoryRegion::new(regions[idx], self.id, timestamp)?;
                 pm_regions.push(mock_regions);
@@ -108,6 +109,7 @@ verus! {
                         &&& pm.inv()
                         &&& pm@.no_outstanding_writes()
                         &&& pm@.current_timestamp == timestamp@
+                        &&& pm@.device_id == device_id
                     },
                     Err(_) => true
                 }
@@ -138,13 +140,14 @@ verus! {
             // volatile buffer matches the result of flushing the
             // abstract state.
             &&& self.contents@ == self.persistent_memory_view@.flush().committed()
+            &&& self.device_id == self@.device_id
+            &&& self@.current_timestamp.device_id() == self.spec_device_id()
         }
 
         closed spec fn spec_device_id(&self) -> u128
         {
             self.device_id
         }
-
 
         fn device_id(&self) -> u128
         {
@@ -180,9 +183,15 @@ verus! {
             let old_pm_view = self.persistent_memory_view;
             self.persistent_memory_view = Ghost(self.persistent_memory_view@.flush());
             proof {
-                lemma_timestamp_inc_gt(self.persistent_memory_view@.current_timestamp, old_pm_view@.current_timestamp);
+                lemma_auto_timestamp_helpers();
             }
             assert (self.contents@ =~= self.persistent_memory_view@.flush().committed());
+        }
+
+        fn update_region_timestamp(&mut self, new_timestamp: Ghost<PmTimestamp>)
+        {
+            self.persistent_memory_view = Ghost(self.persistent_memory_view@.update_region_with_timestamp(new_timestamp@));
+            assert(self.contents@ == self.persistent_memory_view@.flush().committed());
         }
     }
 
@@ -228,6 +237,22 @@ verus! {
         fn device_id(&self) -> u128
         {
             self.device_id
+        }
+
+        // TODO: same issue as the other update timestamp function -- this shouldn't really
+        // be exec but I don't know how to do it with a spec function. Maybe the compiler
+        // will just see that it's a no-op and optimize it out?
+        // TODO: This shouldn't be external_body but the indexing syntax we need to use
+        // is not supported in non-external_body functions right now
+        #[verifier::external_body]
+        fn update_timestamps(&mut self, new_timestamp: Ghost<PmTimestamp>)
+        {
+            for i in iter: 0..self.pms.len()
+                invariant
+                    iter.end == self.pms.len(),
+            {
+                self.pms[i].update_region_timestamp(new_timestamp);
+            }
         }
 
         fn get_num_regions(&self) -> usize
@@ -277,14 +302,21 @@ verus! {
                     let region = #[trigger] regions[i];
                     &&& region.inv()
                     &&& region@.current_timestamp == regions[0]@.current_timestamp
+                    &&& region.spec_device_id() == regions[0].spec_device_id()
                 },
             ensures
                 result@.len() == regions@.len(),
                 result.inv(),
                 forall |i: int| 0 <= i < result@.len() ==> {
                     let region = #[trigger] result@[i];
-                    &&& region.current_timestamp == result@[0].current_timestamp
-                }
+                    region.current_timestamp == result@[0].current_timestamp
+                },
+                forall |i: int| 0 <= i < result@.len() ==> {
+                    let region = #[trigger] result@[i];
+                    region.device_id == result@[0].device_id
+                },
+                result@.current_timestamp == regions[0]@.current_timestamp,
+                result.spec_device_id() == regions[0].spec_device_id()
         {
             let device_id = regions[0].device_id();
             Self {
